@@ -16,7 +16,7 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
 
 // function declarations
 
-const struct device *const temp_sensor = DEVICE_DT_GET_ONE(microchip_mcp9808);
+const struct device *const temp_sensor = DEVICE_DT_GET_ONE(jedec_jc_42_4_temp);
 
 int32_t temperature_degC;
 
