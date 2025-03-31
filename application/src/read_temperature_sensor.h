@@ -5,6 +5,6 @@
 #include "zephyr/drivers/sensor.h"
 
 
-int read_temperature_sensor(const struct device *temp_sensor, int32_t *temperature_degC);
+int read_temperature_sensor(const struct device *temp_sensor, float *temperature_degC);
 
 #endif

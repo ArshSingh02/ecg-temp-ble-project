@@ -18,7 +18,7 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
 
 const struct device *const temp_sensor = DEVICE_DT_GET_ONE(jedec_jc_42_4_temp);
 
-int32_t temperature_degC;
+float temperature_degC;
 
 K_EVENT_DEFINE(errors);
 
@@ -46,7 +46,7 @@ int main(void) {
             return ret;
         }
 
-        LOG_INF("Temperature: %d", temperature_degC);
+        LOG_INF("Temperature: %f", (double)temperature_degC);
 
         k_msleep(MEASUREMENT_DELAY_MS);
 

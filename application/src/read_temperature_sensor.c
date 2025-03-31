@@ -2,12 +2,12 @@
 
 LOG_MODULE_REGISTER(read_temperature_sensor, LOG_LEVEL_DBG);
 
-int read_temperature_sensor(const struct device *temp_sensor, int32_t *temperature_degC) {
+int read_temperature_sensor(const struct device *temp_sensor, float *temperature_degC) {
     /*  Fetch-n-get temperature sensor data
 
         INPUTS:
             temp_sensor (const struct device *) - temperature sensor device
-            temperature_degC (int32_t *) - pointer to store temperature in degrees Celsius
+            temperature_degC (float *) - pointer to store temperature in degrees Celsius
 
         RETURNS:
             0 - success
@@ -33,7 +33,7 @@ int read_temperature_sensor(const struct device *temp_sensor, int32_t *temperatu
         // data returned in kPa
         *temperature_degC = sensor_value_to_float(&sensor_vals);
 
-        LOG_INF("Temperature (deg C): %d", *temperature_degC);
+        LOG_INF("Temperature (deg C): %f", (double)*temperature_degC);
 
         return 0;
 }          
