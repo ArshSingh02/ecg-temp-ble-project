@@ -1,25 +1,14 @@
 # Final Project: ECG & Temperature Monitor with BLE
 
-**You are allowed to work in groups of up to 3 students for this final project.**
-
-* Have one person (referred to as the Team Leader below) in your group fork this repository into their userspace.
-* All other team members should fork the Team Leader's repository.
-* Each team member should add Dr. Palmeri and all of the class teaching assistants as Maintainers to their repository.
+* You should fork this repository to your userspace and add Dr. Palmeri as a `Maintainer`.
 * Questions should be asked exclusively through GitLab Issues.
-* All team members should contribute to the final project, and this equal contribution should be reflected through the git history.
-* All team members should create Merge Requests to the Team Leader's repository for their contributions throughout the project.
-* If you work as a team, the only way for everyone to get credit is through git commits and merge requests that reflect individual user contributions.  **You will not be able to say "we worked on this together" without git commits and merge requests to back it up to receive credit for working on the project.**
-* Inequalities in contributions will be reflected in the **individual** final project grades.
-* :scream: If collaborating with other students in the class stresses you out, or you worry about effort inequity, then I would recommend working alone.
 
 ## Git Version Control Management
 
 * Use best version control practices throughout the development of your firmware.
 * Use branches for development and merge into your `main` branch when the code is stable.
 * Commit often with meaningful commit messages.
-* Merge Requests to the Team Leader's repository should be made when focused, but functional, changes are complete.
-* Using libraries will help avoid conflicts in `main.c` that will occur if everyone writes code in the same file.
-* Be careful collaborating with Jupyter notebooks; they don't play well with merges.  You may want each team member to perform testing in separate notebooks that you manually combine at the end of the project, or you may divide up the labor of testing and analysis between team members.
+* Branches should be merged when focused, functional changes are complete.
 
 ## Best Coding Practices
 
@@ -27,9 +16,9 @@
 * Functions should be short and do one thing.  They should return an exit code that is checked in the calling function, indicating success or failure.
 * MACROS!  Avoid hard-coded values in your code.
 * Use structs to organize related data.
-* Use libraries for code that could be re-used in other projects.
+* Use libraries for code that is self-contained. 
 * Use the `LOGGING` module to log errors, warnings, information and debug messages.
-* You should not have any compiler/build warnings.  The CI script will build against `v2.6.2` of the Zephyr SDK; using `v2.7.0` will cause build errors related to the SMF module.
+* You should not have any compiler/build warnings.  The CI script will build against `v2.9.0` of the Zephyr SDK.
 
 ## Firmware Functional Specifications
 
@@ -66,11 +55,14 @@
 
 ## BLE Server (Mobile App)
 
-Your device can connect via BLE to a mobile app called [nRF Connect](https://www.nordicsemi.com/Products/Development-tools/nrf-connect-for-mobile).  This app can be used to read the services and characteristics that your device is advertising.
+* Your device can connect via BLE to a mobile app called [nRF Connect](https://www.nordicsemi.com/Products/Development-tools/nrf-connect-for-mobile).  
+* This app can be used to read the services and characteristics that your device is advertising.
 
 ## State Diagram
 
-Generate a detailed state diagram that all states, events and actions for your firmware.  A starter diagram is provided in the `state_diagram.puml` file, along with its rendering below.  You should add states, events and actions as needed to fully describe the functionality of your firmware.
+* Generate a detailed state diagram that all states, events and actions for your firmware.  
+* A starter diagram is provided in the `state_diagram.puml` file, along with its rendering below.  
+* You should add states, events and actions as needed to fully describe the functionality of your firmware.
 
 ![State Diagram](state_diagram.png)
 
@@ -78,33 +70,27 @@ Generate a detailed state diagram that all states, events and actions for your f
 
 Complete the testing analysis described in [testing/final_project.ipynb](testing/final_project.ipynb) to verify the accuracy of your firmware.
 
-## Extra Credit
-
-* :star: Implement signal processing to get the ECG measurement to work on a noisy signal with low-frequency "DC drift".  This will be graded based on the quality of the implementation and the ability to accurately measure the average heart rate.
-
 ## Grading
 
-* This final project is worth 75% of your grade.  Absolutely no late submissions will be accepted.
+* This final project is worth 75% of your grade.  *Absolutely no late submissions will be accepted.*
 * Git version control will be graded based on best practices.
 * Firmware will be graded based on all best practices taught throughout the semester.
 * Code organization and coding best practices will be graded.
 * State diagram will be graded based on completeness, accuracy and ease of interpretation.
 * Testing and analysis technical report will be graded based on presentation, completeness, and accuracy.
-* Your demo will be graded based on the functionality of your device and your ability to answer questions about your firmware.
-* Extra credit will only be considered after all required functionality is implemented and working correctly.  
-  * Completing the extra credit will forgive some/all late penalties for labs this semester.  (Applies to all team members.)
-  * If you do not have any late penalties, then the extra credit will be added to your final project grade, including going over 100%.
 
 ## What to Submit
 
-* Make sure that all of your development branches have been merged into `main` in your Team Leader's repository.
-* Create an annotated tag called `v1.0.0` to mark the commit that you want to be graded.  If you fix any bugs after creating this tag, you can create another tag called `v1.0.1`, etc.  Your latest tag will be the one that is graded.
+* Make sure that all of your branches have been merged into the `main` branch.
+* Create an annotated tag called `v1.0.0` to mark the commit that you want to be graded.  
+  * If you fix any bugs after creating this tag, you can create another tag called `v1.0.1`, etc.  
+  * Your latest tag will be the one that is graded up until the final due date/time of the project.
 * Create an Issue in your repository with the title "Final Project Submission", and assign it to Dr. Palmeri.
 * **All repositories will be cloned at the due date/time for grading.  Absolutely no changes will be accepted after this time.**
-* **Your team must schedule a time to do a live demo of your device with Dr. Palmeri before the due date of this assignment.  Your team will be asked questions during this demo.**
 
 ## Resources
 
 ### Heart Rate Service (GATT)
-* https://github.com/zephyrproject-rtos/zephyr/tree/main/samples/bluetooth/peripheral_hr
-* https://docs.zephyrproject.org/latest/doxygen/html/group__bt__hrs.html
+
+* [BLE Sample: Peripheral Heartrate](https://github.com/zephyrproject-rtos/zephyr/tree/main/samples/bluetooth/peripheral_hr)
+* [Zephyr Docs: BT Heartrate Service](https://docs.zephyrproject.org/latest/doxygen/html/group__bt__hrs.html)
