@@ -1,6 +1,7 @@
 # Final Project: ECG & Temperature Monitor with BLE
 
-* You should fork this repository to your userspace and add Dr. Palmeri as a `Maintainer`.
+* Fork this repository to your userspace. 
+* Add Dr. Palmeri as a `Maintainer`.
 * Questions should be asked exclusively through GitLab Issues.
 
 ## Git Version Control Management
@@ -32,13 +33,13 @@
     * A BLE notification should be sent with the error code (see BLE custom service/characteristic below).
   * Implement states of your choosing for the following measurements, calculations and BLE communications.
 * Have a heartbeat `LED0` that blinks every 1 second with a 50% duty cycle (`ON:OFF` time) in all states.
-* Implement functionality to measure a battery voltage (0-3.7 V) using `AIN0`:
+* Implement functionality to measure a battery voltage (0-3.0 V) using `AIN0`:
   1. When the device first powers on, and then
   1. Every 1 minute thereafter, but only when in the `IDLE` state.
   1. You won't actually be connecting a battery to your device; you can use a power support or another voltage source to input a voltage to `AIN0` to simulate a battery level.
 * Have the brightness of `LED1` linearly modulated by the percentage of the battery level.
 * Implement functionality to make two measurements after pressing `BUTTON1`:
-  1. Read temperature with your MPR9808 sensor (in degrees Celsius).
+  1. Read temperature with your `MPR9808` sensor (in degrees Celsius).
   1. Calculate the average heart rate (40-200 BPM) using 25-30 seconds of an ECG signal (ranging from -500 - 500 mV, note this is bipolar) from the function generator (see video on how to setup the function generator to output an ECG signal).
 * Pressing `BUTTON1` during the measurements should post an error and go to the `ERROR` state.
 * Blink `LED2` with a 25% duty cycle (`ON:OFF` time) at the average heart rate after the measurements are complete.
