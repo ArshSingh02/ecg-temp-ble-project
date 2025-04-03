@@ -188,7 +188,7 @@ uint8_t bluetooth_get_battery_level(void) {
 void bluetooth_set_battery_level(int32_t raw_mV) {
     LOG_DBG("Raw Battery: %d mV", raw_mV);
     
-    float normalized_level = (float)raw_mV / NOMINAL_BATTERY_VOLT_MV;
+    float normalized_level = (float) 100 * raw_mV / NOMINAL_BATTERY_VOLT_MV;
     
     LOG_INF("Normalized Battery Level: %lf", (double)normalized_level);
     int err = bt_bas_set_battery_level((int)normalized_level);
