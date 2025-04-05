@@ -1,7 +1,7 @@
 ---
 build:
   stage: build
-  image: zephyrprojectrtos/ci
+  image: ghcr.io/zephyrproject-rtos/ci
   script:
       - west init -m https://github.com/nrfconnect/sdk-nrf --mr v2.9.0
       - west update -o=--depth=1 -n
