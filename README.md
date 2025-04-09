@@ -71,6 +71,11 @@
 
 Complete the testing analysis described in [testing/final_project.ipynb](testing/final_project.ipynb) to verify the accuracy of your firmware.
 
+## How to Generate an ECG Signal
+
+* [WaveStation 2012 AWG](https://youtu.be/pQYMHtzReZ8?si=oKQQXotuLZJn3cD0)
+* [Digilent Waveforms Script](testing/digilent-ecg-script.txt)
+
 ## Grading
 
 * This final project is worth 75% of your grade.  *Absolutely no late submissions will be accepted.*
