@@ -39,7 +39,7 @@
   1. You won't actually be connecting a battery to your device; you can use a power support or another voltage source to input a voltage to `AIN0` to simulate a battery level.
 * Have the brightness of `LED1` linearly modulated by the percentage of the battery level.
 * Implement functionality to make two measurements after pressing `BUTTON1`:
-  1. Read temperature with your `MPR9808` sensor (in degrees Celsius).
+  1. Read temperature with your [`MCP9808`](https://www.adafruit.com/product/1782) sensor (in degrees Celsius).
   1. Calculate the average heart rate (40-200 BPM) using 25-30 seconds of an ECG signal (ranging from -500 - 500 mV, note this is bipolar) from the function generator (see video on how to setup the function generator to output an ECG signal).
 * Pressing `BUTTON1` during the measurements should post an error and go to the `ERROR` state.
 * Blink `LED2` with a 25% duty cycle (`ON:OFF` time) at the average heart rate after the measurements are complete.
