@@ -22,8 +22,34 @@ float temperature_degC;
 
 K_EVENT_DEFINE(errors);
 
+// Define button events
+K_EVENT_DEFINE(button_events);
+// Represent Button with Mask
+#define MEASURE_DATA BIT(0)
+#define CLEAR_LED BIT(1)
+#define RESET_DEVICE BIT(2)
 
+// Configure LEDs and Buttons
+static const struct gpio_dt_spec heartbeat_led = GPIO_DT_SPEC_GET(DT_ALIAS(heartbeat), gpios);
+static const struct gpio_dt_spec battery_led = GPIO_DT_SPEC_GET(DT_ALIAS(battery), gpios);
+static const struct gpio_dt_spec average_hr_led = GPIO_DT_SPEC_GET(DT_ALIAS(avgheartrate), gpios);
 
+static const struct gpio_dt_spec measure_button = GPIO_DT_SPEC_GET(DT_ALIAS(sw0), gpios);
+static const struct gpio_dt_spec clear_button = GPIO_DT_SPEC_GET(DT_ALIAS(sw1), gpios);
+static const struct gpio_dt_spec reset_button = GPIO_DT_SPEC_GET(DT_ALIAS(sw2), gpios);
+
+static struct gpio_callback measure_button_cb;
+void measure_button_callback(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
+    k_event_post(&button_events, MEASURE_DATA);
+}
+static struct gpio_callback clear_button_cb;
+void extra_measure_button_callback(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
+    k_event_post(&button_events, CLEAR_LED);
+}
+static struct gpio_callback reset_button_cb;
+void sinusoidal_measuring_button_callback(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
+    k_event_post(&button_events, RESET_DEVICE);
+}
 
 
 // State Framework
