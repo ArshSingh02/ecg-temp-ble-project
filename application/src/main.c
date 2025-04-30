@@ -13,6 +13,7 @@
 LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
 
 #define MEASUREMENT_DELAY_MS 1000
+#define BATTERY_MEASURE_INTERVAL_MS 60000
 
 // function declarations
 
@@ -23,11 +24,18 @@ float temperature_degC;
 K_EVENT_DEFINE(errors);
 
 // Define button events
-K_EVENT_DEFINE(button_events);
+K_EVENT_DEFINE(events);
 // Represent Button with Mask
 #define MEASURE_DATA BIT(0)
 #define CLEAR_LED BIT(1)
 #define RESET_DEVICE BIT(2)
+#define BATTERY_TIMER_EVENT BIT(3)
+
+K_TIMER_DEFINE(battery_timer, battery_timer_handler, NULL);
+void battery_timer_handler(struct k_timer *timer_id) {
+    k_event_post(&events, BATTERY_TIMER_EVENT);
+}
+
 
 // Configure LEDs and Buttons
 static const struct gpio_dt_spec heartbeat_led = GPIO_DT_SPEC_GET(DT_ALIAS(heartbeat), gpios);
@@ -40,15 +48,15 @@ static const struct gpio_dt_spec reset_button = GPIO_DT_SPEC_GET(DT_ALIAS(sw2), 
 
 static struct gpio_callback measure_button_cb;
 void measure_button_callback(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
-    k_event_post(&button_events, MEASURE_DATA);
+    k_event_post(&events, MEASURE_DATA);
 }
 static struct gpio_callback clear_button_cb;
 void clear_button_callback(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
-    k_event_post(&button_events, CLEAR_LED);
+    k_event_post(&events, CLEAR_LED);
 }
 static struct gpio_callback reset_button_cb;
 void reset_button_callback(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
-    k_event_post(&button_events, RESET_DEVICE);
+    k_event_post(&events, RESET_DEVICE);
 }
 
 // Initialize Threads
@@ -64,7 +72,7 @@ K_THREAD_DEFINE(heartbeat_thread_id, 1024, heartbeat_thread, NULL, NULL, NULL, 5
 
 
 // State Framework
-enum states { INIT, IDLE, MEASURE, BLUETOOTH,ERROR };
+enum states { INIT, IDLE, MEASURE, BATTERY, BLUETOOTH, ERROR };
 
 int state = INIT;
 
@@ -113,13 +121,19 @@ static void idle_entry(void *o) {
 }
 
 static void idle_run(void *o) {
-
+    uint32_t events = k_event_wait(&events, MEASURE_DATA | BATTERY_TIMER_EVENTS, true, K_FOREVER);
+    if (events & MEASURE_DATA) {
+        smf_set_state(SMF_CTX(&s_obj), &states[MEASURE]);
+    } (events & BATTERY_TIMER_EVENT) {
+        smf_set_state(SMF_CTX(&s_obj), &states[BATTERY]);
+    }
 }
 
 static const struct smf_state states[] = {
     [INIT] = SMF_CREATE_STATE(NULL, init_run, NULL, NULL, NULL),
     [IDLE] = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
     [MEASURE] = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
+    [BATTERY] = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
     [BLUETOOTH] = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
     [ERROR] = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
 }
