@@ -11,6 +11,22 @@
 	};
 };
 
+&adc {
+    #address-cells = <1>;
+    #size-cells = <0>;
+
+    vadc: channel@0 {
+        reg = <0>;
+        zephyr,reference = "ADC_REF_INTERNAL";
+        zephyr,gain = "ADC_GAIN_1_5";
+        zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+        zephyr,input-positive = <NRF_SAADC_AIN0>; // P0.02
+        zephyr,resolution = <12>;
+    };
+
+    status = "okay";
+};
+
 /* I2C Pin Mapping
 SCK: P0.27
 SDA: P0.26

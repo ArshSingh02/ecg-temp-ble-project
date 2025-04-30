@@ -36,6 +36,16 @@ void battery_timer_handler(struct k_timer *timer_id) {
     k_event_post(&events, BATTERY_TIMER_EVENT);
 }
 
+// Define ADC Channel Configuration
+#define ADC_DT_SPEC_GET_BY_ALIAS(adc_alias)                  \
+{                                                            \
+    .dev = DEVICE_DT_GET(DT_PARENT(DT_ALIAS(adc_alias))),    \
+    .channel_id = DT_REG_ADDR(DT_ALIAS(adc_alias)),          \
+    ADC_CHANNEL_CFG_FROM_DT_NODE(DT_ALIAS(adc_alias))        \
+}
+
+static const struct adc_dt_spec adc_vadc = ADC_DT_SPEC_GET_BY_ALIAS(vadc);
+static int16_t adc_buf;
 
 // Configure LEDs and Buttons
 static const struct gpio_dt_spec heartbeat_led = GPIO_DT_SPEC_GET(DT_ALIAS(heartbeat), gpios);
@@ -124,16 +134,56 @@ static void idle_run(void *o) {
     uint32_t events = k_event_wait(&events, MEASURE_DATA | BATTERY_TIMER_EVENTS, true, K_FOREVER);
     if (events & MEASURE_DATA) {
         smf_set_state(SMF_CTX(&s_obj), &states[MEASURE]);
-    } (events & BATTERY_TIMER_EVENT) {
+    } else if (events & BATTERY_TIMER_EVENT) {
         smf_set_state(SMF_CTX(&s_obj), &states[BATTERY]);
     }
 }
 
+static void battery_entry(void *o) {
+    LOG_INF("BATTERY ENTRY: Setting up ADC");
+
+    if (!device_is_ready(adc_vadc.dev)) {
+        LOG_ERR("Battery ADC not ready");
+        smf_set_state(SMF_CTX(&s_obj), &states[ERROR]);
+        return;
+    }
+
+    if (adc_channel_setup_dt(&adc_vadc) < 0) {
+        LOG_ERR("Failed to setup battery ADC channel");
+        smf_set_state(SMF_CTX(&s_obj), &states[ERROR]);
+        return;
+    }
+}
+
+static void battery_run(void *o) {
+    struct adc_sequence seq = {
+        .buffer = &adc_buf,
+        .buffer_size = sizeof(adc_buf),
+        .resolution = 12,
+        .channels = BIT(adc_vadc.channel_id),
+    };
+
+    adc_sequence_init_dt(&adc_vadc, &seq);
+    if (adc_read(adc_vadc.dev, &seq) < 0) {
+        LOG_ERR("Battery ADC read failed");
+    } else {
+        int32_t val_mv = adc_buf;
+        if (adc_raw_to_millivolts_dt(&adc_vadc, &val_mv) < 0) {
+            LOG_ERR("Failed to convert battery value to mV");
+        } else {
+            LOG_INF("Battery Voltage: %d mV", val_mv);
+        }
+    }
+
+    smf_set_state(SMF_CTX(&s_obj), &states[IDLE]);
+}
+
+
 static const struct smf_state states[] = {
     [INIT] = SMF_CREATE_STATE(NULL, init_run, NULL, NULL, NULL),
-    [IDLE] = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
+    [IDLE] = SMF_CREATE_STATE(idle_entry, idle_run, NULL, NULL, NULL),
     [MEASURE] = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
-    [BATTERY] = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
+    [BATTERY] = SMF_CREATE_STATE(battery_entry, battery_run, NULL, NULL, NULL),
     [BLUETOOTH] = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
     [ERROR] = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
 }
