@@ -22,6 +22,25 @@ float temperature_degC;
 
 K_EVENT_DEFINE(errors);
 
+
+
+
+
+// State Framework
+enum states { INIT, IDLE, MEASURE, BLUETOOTH,ERROR };
+
+int state = INIT;
+
+static const struct smf_state states[];
+struct s_object {
+    struct smf_ctx ctx;
+} s_obj;
+
+
+static void init_run(void *o) {
+
+}
+
 int main(void) {
 
     int ret;

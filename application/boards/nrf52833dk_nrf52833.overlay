@@ -1,6 +1,13 @@
 / {
 	aliases {
         heartbeat = &led0;  // this corresponds to LED1 on the board
+        batterylevel = &led1;  // this corresponds to LED2 on the board
+        avgheartrate = &led2;  // this corresponds to LED3 on the board
+        erroronly = &led3;  // this corresponds to LED4 on the board
+
+        hrmeasure = &button0;
+        clearmeasure = &button1;
+        resetdevice = &button2;
 	};
 };
 
