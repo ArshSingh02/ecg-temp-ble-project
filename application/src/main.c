@@ -51,6 +51,17 @@ void reset_button_callback(const struct device *dev, struct gpio_callback *cb, u
     k_event_post(&button_events, RESET_DEVICE);
 }
 
+// Initialize Threads
+void heartbeat_thread(void *, void *, void *) {
+    while (1) {
+        gpio_pin_toggle_dt(&heartbeat_led);
+        k_msleep(500);
+        gpio_pin_toggle_dt(&heartbeat_led);
+        k_msleep(500);
+    } 
+}
+K_THREAD_DEFINE(heartbeat_thread_id, 1024, heartbeat_thread, NULL, NULL, NULL, 5, 0, 0);
+
 
 // State Framework
 enum states { INIT, IDLE, MEASURE, BLUETOOTH,ERROR };
@@ -95,6 +106,14 @@ static void init_run(void *o) {
     gpio_add_callback_dt(&reset_button, &reset_button_cb);
 
     smf_set_state(SMF_CTX(&s_obj), &states[IDLE]);
+}
+
+static void idle_entry(void *o) {
+    LOG_INF("Entering IDLE State");
+}
+
+static void idle_run(void *o) {
+
 }
 
 static const struct smf_state states[] = {
