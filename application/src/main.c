@@ -43,11 +43,11 @@ void measure_button_callback(const struct device *dev, struct gpio_callback *cb,
     k_event_post(&button_events, MEASURE_DATA);
 }
 static struct gpio_callback clear_button_cb;
-void extra_measure_button_callback(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
+void clear_button_callback(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
     k_event_post(&button_events, CLEAR_LED);
 }
 static struct gpio_callback reset_button_cb;
-void sinusoidal_measuring_button_callback(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
+void reset_button_callback(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
     k_event_post(&button_events, RESET_DEVICE);
 }
 
@@ -64,7 +64,45 @@ struct s_object {
 
 
 static void init_run(void *o) {
+    if (!device_is_ready(heartbeat_led.port) ||
+    !device_is_ready(battery_led.port) ||
+    !device_is_ready(average_hr_led.port) ||
+    !device_is_ready(measure_button.port) ||
+    !device_is_ready(clear_button.port) ||
+    !device_is_ready(reset_button.port)) {
+    LOG_ERR("GPIO0 device not ready.");
+    smf_set_state(SMF_CTX(&s_obj), &states[ERROR]);
+    }
 
+    gpio_pin_configure_dt(&heartbeat_led, GPIO_OUTPUT_INACTIVE);
+    gpio_pin_configure_dt(&battery_led, GPIO_OUTPUT_INACTIVE);
+    gpio_pin_configure_dt(&average_hr_led, GPIO_OUTPUT_INACTIVE);
+
+    gpio_pin_configure_dt(&measure_button, GPIO_INPUT);
+    gpio_pin_interrupt_configure_dt(&measure_button, GPIO_INT_EDGE_TO_ACTIVE);
+    gpio_pin_configure_dt(&clear_button, GPIO_INPUT);
+    gpio_pin_interrupt_configure_dt(&clear_button, GPIO_INT_EDGE_TO_ACTIVE);
+    gpio_pin_configure_dt(&reset_button, GPIO_INPUT);
+    gpio_pin_interrupt_configure_dt(&reset_button, GPIO_INT_EDGE_TO_ACTIVE);
+
+    gpio_init_callback(&measure_button_cb, measure_button_callback, BIT(measure_button.pin)); // associate callback with GPIO pin
+    gpio_add_callback_dt(&measure_button, &measure_button_cb);
+
+    gpio_init_callback(&clear_button_cb, clear_button_callback, BIT(clear_button.pin)); // associate callback with GPIO pin
+    gpio_add_callback_dt(&clear_button, &clear_button_cb);
+
+    gpio_init_callback(&reset_button_cb, reset_button_callback, BIT(reset_button.pin)); // associate callback with GPIO pin
+    gpio_add_callback_dt(&reset_button, &reset_button_cb);
+
+    smf_set_state(SMF_CTX(&s_obj), &states[IDLE]);
+}
+
+static const struct smf_state states[] = {
+    [INIT] = SMF_CREATE_STATE(NULL, init_run, NULL, NULL, NULL),
+    [IDLE] = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
+    [MEASURE] = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
+    [BLUETOOTH] = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
+    [ERROR] = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
 }
 
 int main(void) {
