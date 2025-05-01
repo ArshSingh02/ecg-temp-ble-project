@@ -14,6 +14,8 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
 
 #define MEASUREMENT_DELAY_MS 1000
 #define BATTERY_MEASURE_INTERVAL_MS 60000
+#define PWM_PERIOD_USEC 1000
+
 
 // function declarations
 
@@ -47,9 +49,11 @@ void battery_timer_handler(struct k_timer *timer_id) {
 static const struct adc_dt_spec adc_vadc = ADC_DT_SPEC_GET_BY_ALIAS(vadc);
 static int16_t adc_buf;
 
+static const struct pwm_dt_spec pwm1 = PWM_DT_SPEC_GET(DT_ALIAS(pwm1));
+
 // Configure LEDs and Buttons
 static const struct gpio_dt_spec heartbeat_led = GPIO_DT_SPEC_GET(DT_ALIAS(heartbeat), gpios);
-static const struct gpio_dt_spec battery_led = GPIO_DT_SPEC_GET(DT_ALIAS(battery), gpios);
+// static const struct gpio_dt_spec battery_led = GPIO_DT_SPEC_GET(DT_ALIAS(battery), gpios);
 static const struct gpio_dt_spec average_hr_led = GPIO_DT_SPEC_GET(DT_ALIAS(avgheartrate), gpios);
 
 static const struct gpio_dt_spec measure_button = GPIO_DT_SPEC_GET(DT_ALIAS(sw0), gpios);
@@ -172,6 +176,15 @@ static void battery_run(void *o) {
             LOG_ERR("Failed to convert battery value to mV");
         } else {
             LOG_INF("Battery Voltage: %d mV", val_mv);
+
+            float battery_pct = CLAMP(val_mv / 3000.0f, 0.0f, 1.0f);
+            uint32_t pulse_width = (uint32_t)(battery_pct * PWM_PERIOD_USEC);
+            LOG_INF("Battery %%: %.1f%% | PWM pulse: %u us", battery_pct * 100.0f, pulse_width);
+
+            int ret = pwm_set_pulse_dt(&pwm1, pulse_width * 1000);
+            if (ret < 0) {
+                LOG_ERR("PWM set failed: %d", ret);
+            }
         }
     }
 
@@ -206,7 +219,10 @@ int main(void) {
     // read the temperature every MEASUREMENT_DELAY_MS
     while (1) {
 
-        ret = read_temperature_sensor(temp_sensor, &temperature_degC);
+        smf_set_initial(SMF_CTX(&s_obj), &states[INIT]);
+        k_timer_start(&battery_timer, K_NO_WAIT, K_MSEC(BATTERY_MEASURE_INTERVAL_MS));
+
+        /* ret = read_temperature_sensor(temp_sensor, &temperature_degC);
         if (ret != 0) {
             LOG_ERR("There was a problem reading the temperature sensor (%d)", ret);
             return ret;
@@ -215,7 +231,7 @@ int main(void) {
         LOG_INF("Temperature: %f", (double)temperature_degC);
 
         k_msleep(MEASUREMENT_DELAY_MS);
-
+        */
     }
 
     return 0;
