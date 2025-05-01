@@ -8,6 +8,9 @@
         hrmeasure = &button0;
         clearmeasure = &button1;
         resetdevice = &button2;
+
+        vadc = &vadc;
+        pwm1 = &pwmch1;
 	};
 
     pwm {
