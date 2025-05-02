@@ -8,6 +8,7 @@
 #include <zephyr/smf.h> 
 
 #include "read_temperature_sensor.h"
+#include "heart_beat_peak_detection.h"
 #include "ble-lib.h"
 
 LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
@@ -125,6 +126,35 @@ float check_battery_and_update_pwm(void) {
 }
 
 
+float measure_average_heart_rate(void) {
+
+    struct adc_sequence seq = {
+        .buffer = &ecg_buffer[0],
+        .buffer_size = sizeof(int16_t),
+        .resolution = 12,
+        .oversampling = 4,
+        .channels = BIT(adc_diff.channel_id),
+    };
+    adc_sequence_init_dt(&adc_diff, &seq);
+
+    for (int i = 0; i < ECG_BUFFER_SIZE; i++) {
+        seq.buffer = &ecg_buffer[i];
+        int ret = adc_read(adc_diff.dev, &seq);
+        if (ret < 0) {
+            LOG_ERR("ADC read failed at index %d (%d)", i, ret);
+            return -1.0f;
+        }
+        k_busy_wait(1000);
+    }
+
+    LOG_HEXDUMP_INF(ecg_buffer, sizeof(ecg_buffer), "ECG Buffer (HEX)");
+
+    float bpm = compute_bpm(ecg_buffer, ECG_BUFFER_SIZE, ECG_SAMPLE_RATE_HZ, ECG_DURATION_SEC);
+    return bpm;
+}
+
+
+
 
 // State Framework
 enum states { INIT, IDLE, MEASURE, BATTERY, BLUETOOTH, ERROR };
@@ -204,6 +234,31 @@ static void battery_entry(void *o) {
 
 static void battery_run(void *o) {
     check_battery_and_update_pwm();
+    smf_set_state(SMF_CTX(&s_obj), &states[IDLE]);
+}
+
+static void measure_entry(void *o) {
+    LOG_INF("Measure ENTRY");
+    if (!device_is_ready(adc_diff.dev)) {
+        LOG_ERR("ADC not ready");
+        smf_set_state(SMF_CTX(&s_obj), &states[ERROR]);
+        return;
+    }
+}
+
+static void measure_run(void *o) {
+    float bpm = measure_average_heart_rate();
+    if (bpm < 0) {
+        smf_set_state(SMF_CTX(&s_obj), &states[ERROR]);
+        return;
+    }
+
+    LOG_INF("Computed Average Heart Rate: %.1f BPM", bpm);
+
+    gpio_pin_set_dt(&average_hr_led, 1);
+    k_sleep(K_SECONDS(1));
+    gpio_pin_set_dt(&average_hr_led, 0);
+
     smf_set_state(SMF_CTX(&s_obj), &states[IDLE]);
 }
 
