@@ -16,6 +16,10 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
 #define BATTERY_MEASURE_INTERVAL_MS 60000
 #define PWM_PERIOD_USEC 1000
 
+#define ECG_SAMPLE_RATE_HZ 1000
+#define ECG_DURATION_SEC 30
+#define ECG_BUFFER_SIZE (ECG_SAMPLE_RATE_HZ * ECG_DURATION_SEC)
+
 
 // function declarations
 
@@ -49,6 +53,9 @@ K_TIMER_DEFINE(battery_timer, battery_timer_handler, NULL);
 
 static const struct adc_dt_spec adc_vadc = ADC_DT_SPEC_GET_BY_ALIAS(vadc);
 static int16_t adc_buf;
+
+static const struct adc_dt_spec adc_diff = ADC_DT_SPEC_GET_BY_ALIAS(diffadc);
+static int16_t ecg_buffer[ECG_BUFFER_SIZE];
 
 static const struct pwm_dt_spec pwm1 = PWM_DT_SPEC_GET(DT_ALIAS(pwm1));
 
