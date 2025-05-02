@@ -224,13 +224,6 @@ float measure_average_heart_rate(void) {
 }
 
 float read_temperature(void) {
-    if (!device_is_ready(temp_sensor)) {
-        LOG_ERR("Temperature sensor %s is not ready", temp_sensor->name);
-        return -1;
-    }
-    else {
-        LOG_INF("Temperature sensor %s is ready", temp_sensor->name);
-    }
 
     float temp;
     int ret = read_temperature_sensor(temp_sensor, &temperature_degC);
@@ -345,6 +338,13 @@ static void measure_entry(void *o) {
         LOG_ERR("ADC not ready");
         smf_set_state(SMF_CTX(&s_obj), &states[ERROR]);
         return;
+    }
+    if (!device_is_ready(temp_sensor)) {
+        LOG_ERR("Temperature sensor %s is not ready", temp_sensor->name);
+        return -1;
+    }
+    else {
+        LOG_INF("Temperature sensor %s is ready", temp_sensor->name);
     }
 }
 
