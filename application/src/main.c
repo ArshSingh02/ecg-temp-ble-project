@@ -21,6 +21,9 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
 #define ECG_DURATION_SEC 30
 #define ECG_BUFFER_SIZE (ECG_SAMPLE_RATE_HZ * ECG_DURATION_SEC)
 
+static struct adc_sequence ecg_seq;
+static volatile int ecg_sample_index = 0;
+
 volatile bool led2_enabled = true;
 
 
@@ -78,6 +81,7 @@ void measure_button_callback(const struct device *dev, struct gpio_callback *cb,
 }
 static struct gpio_callback clear_button_cb;
 void clear_button_callback(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
+    LOG_INF("Clearing LED2");
     led2_enabled = false;
     k_event_post(&app_events, CLEAR_LED);
 }
@@ -161,6 +165,31 @@ float check_battery_and_update_pwm(void) {
 }
 
 
+void ecg_sample_work_handler(struct k_work *work);
+void ecg_sample_timer_handler(struct k_timer *timer);
+
+K_WORK_DEFINE(ecg_sample_work, ecg_sample_work_handler);
+K_TIMER_DEFINE(ecg_sample_timer, ecg_sample_timer_handler, NULL);
+
+void ecg_sample_work_handler(struct k_work *work) {
+    if (ecg_sample_index >= ECG_BUFFER_SIZE) {
+        k_timer_stop(&ecg_sample_timer);
+        return;
+    }
+
+    ecg_seq.buffer = &ecg_buffer[ecg_sample_index];
+    int ret = adc_read(adc_diff.dev, &ecg_seq);
+    if (ret < 0) {
+        LOG_ERR("ADC read failed at index %d (%d)", ecg_sample_index, ret);
+    } else {
+        ecg_sample_index++;
+    }
+}
+
+void ecg_sample_timer_handler(struct k_timer *timer) {
+    k_work_submit(&ecg_sample_work);
+}
+
 float measure_average_heart_rate(void) {
     if (!device_is_ready(adc_diff.dev)) {
         LOG_ERR("Differential ADC not ready");
@@ -172,33 +201,27 @@ float measure_average_heart_rate(void) {
         return -1.0f;
     }
 
-    struct adc_sequence seq = {
+    ecg_sample_index = 0;
+
+    ecg_seq = (struct adc_sequence){
         .buffer = &ecg_buffer[0],
         .buffer_size = sizeof(int16_t),
         .resolution = 12,
         .oversampling = 4,
         .channels = BIT(adc_diff.channel_id),
     };
-    adc_sequence_init_dt(&adc_diff, &seq);
+    adc_sequence_init_dt(&adc_diff, &ecg_seq);
 
-    for (int i = 0; i < ECG_BUFFER_SIZE; i++) {
-        seq.buffer = &ecg_buffer[i];
-        int ret = adc_read(adc_diff.dev, &seq);
-        if (ret < 0) {
-            LOG_ERR("ADC read failed at index %d (%d)", i, ret);
-            return -1.0f;
-        }
+    k_timer_start(&ecg_sample_timer, K_NO_WAIT, K_MSEC(1));
+
+    while (ecg_sample_index < ECG_BUFFER_SIZE) {
         k_sleep(K_MSEC(1));
     }
 
     LOG_HEXDUMP_INF(ecg_buffer, sizeof(ecg_buffer), "ECG Buffer (HEX)");
-
     float bpm = compute_bpm(ecg_buffer, ECG_BUFFER_SIZE, ECG_SAMPLE_RATE_HZ, ECG_DURATION_SEC);
     return bpm;
 }
-
-
-
 
 
 // State Framework
