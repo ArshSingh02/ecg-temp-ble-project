@@ -86,10 +86,12 @@ SCK: P0.27
 SDA: P0.26
 */
 &i2c0 {
-    mcp9808@18{
+    status = "okay";
+
+    mcp9808@18 {
         compatible = "jedec,jc-42.4-temp";
         reg = <0x18>;
+        label = "MCP9808";
         status = "okay";
     };
-
 };
