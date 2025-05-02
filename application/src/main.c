@@ -212,7 +212,7 @@ static const struct smf_state states[] = {
 
 int main(void) {
 
-    int ret;
+    /* int ret;
  
     ret = bluetooth_init(&bluetooth_callbacks, &remote_service_callbacks);
 
@@ -223,7 +223,8 @@ int main(void) {
     else {
         LOG_INF("Temperature sensor %s is ready", temp_sensor->name);
     }
-
+    */
+   
     smf_set_initial(SMF_CTX(&s_obj), &states[INIT]);
     // read the temperature every MEASUREMENT_DELAY_MS
     while (1) {
