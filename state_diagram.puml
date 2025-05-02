@@ -26,9 +26,9 @@ state BATTERY {
 BATTERY --> IDLE : Return to idle
 
 state MEASURE {
-    measure_entry: Setup ECG sampling  
+    measure_entry: Setup ECG and temp sensors  
     measure_entry --> measure_run  
-    measure_run: Compute BPM and update LED  
+    measure_run: Compute BPM and temperature  
 }
 MEASURE --> IDLE : Return to idle
 

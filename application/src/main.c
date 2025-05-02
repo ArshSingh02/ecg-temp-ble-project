@@ -223,6 +223,17 @@ float measure_average_heart_rate(void) {
     return bpm;
 }
 
+float read_temperature(void) {
+
+    float temp;
+    int ret = read_temperature_sensor(temp_sensor, &temperature_degC);
+        if (ret != 0) {
+            LOG_ERR("There was a problem reading the temperature sensor (%d)", ret);
+            return ret;
+        }
+    return temperature_degC;
+}
+
 
 // State Framework
 enum states { INIT, IDLE, MEASURE, BATTERY, BLUETOOTH, ERROR };
@@ -328,16 +339,25 @@ static void measure_entry(void *o) {
         smf_set_state(SMF_CTX(&s_obj), &states[ERROR]);
         return;
     }
+    if (!device_is_ready(temp_sensor)) {
+        LOG_ERR("Temperature sensor %s is not ready", temp_sensor->name);
+        return -1;
+    }
+    else {
+        LOG_INF("Temperature sensor %s is ready", temp_sensor->name);
+    }
 }
 
 static void measure_run(void *o) {
     float bpm = measure_average_heart_rate();
+    float temp = read_temperature();
     if (bpm < 0) {
         smf_set_state(SMF_CTX(&s_obj), &states[ERROR]);
         return;
     }
 
     LOG_INF("Computed Average Heart Rate: %.1f BPM", bpm);
+    LOG_INF("Temperature: %.1f °C", temp);
     measured_bpm = bpm;
     led2_enabled = true;
 
@@ -360,13 +380,6 @@ int main(void) {
  
     ret = bluetooth_init(&bluetooth_callbacks, &remote_service_callbacks);
 
-    if (!device_is_ready(temp_sensor)) {
-            LOG_ERR("Temperature sensor %s is not ready", temp_sensor->name);
-            return -1;
-    }
-    else {
-        LOG_INF("Temperature sensor %s is ready", temp_sensor->name);
-    }
     */
    
     smf_set_initial(SMF_CTX(&s_obj), &states[INIT]);
@@ -375,16 +388,6 @@ int main(void) {
 
         smf_run_state(SMF_CTX(&s_obj));
         k_msleep(100);
-        /* ret = read_temperature_sensor(temp_sensor, &temperature_degC);
-        if (ret != 0) {
-            LOG_ERR("There was a problem reading the temperature sensor (%d)", ret);
-            return ret;
-        }
-
-        LOG_INF("Temperature: %f", (double)temperature_degC);
-
-        k_msleep(MEASUREMENT_DELAY_MS);
-        */
     }
 
     return 0;
