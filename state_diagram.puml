@@ -10,18 +10,26 @@ state INIT {
 INIT --> IDLE : Successful initialization
 
 state IDLE {
-    idle_entry: Start idle timer
+    idle_entry: Start idle timer  
     idle_entry --> idle_run
-    idle_run: Wait for events
+    idle_run: Wait for events  
 }
 
 IDLE --> BATTERY : Battery Timer Event (every 60 seconds)
+IDLE --> MEASURE : Measure Button Pressed
 
 state BATTERY {
-    battery_entry: Prepare ADC
-    battery_entry --> battery_run
-    battery_run: Measure battery and update LED
-    battery_run --> IDLE : Return to idle
+    battery_entry: Prepare ADC  
+    battery_entry --> battery_run  
+    battery_run: Measure battery and update LED  
 }
+BATTERY --> IDLE : Return to idle
+
+state MEASURE {
+    measure_entry: Setup ECG sampling  
+    measure_entry --> measure_run  
+    measure_run: Compute BPM and update LED  
+}
+MEASURE --> IDLE : Return to idle
 
 @enduml
