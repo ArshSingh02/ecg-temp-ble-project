@@ -3,7 +3,7 @@
 #include <stdlib.h>
 
 float compute_bpm(const int16_t *ecg_buffer, int buffer_size, int sample_rate, int duration_sec) {
-    const int16_t threshold = 100;
+    const int16_t threshold = 200;
     int peak_count = 0;
 
     for (int i = 1; i < buffer_size - 1; i++) {
