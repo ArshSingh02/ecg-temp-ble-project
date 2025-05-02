@@ -1,25 +1,27 @@
 @startuml
+top to bottom direction
 
-[*] -> INIT
+[*] --> INIT
 
 state INIT {
-    init_run: Do initty things
+    init_run: Do initialization tasks
 }
 
-INIT -> IDLE : Successful initialization
+INIT --> IDLE : Successful initialization
 
 state IDLE {
-    idle_entry: Do idle entry things
-    idle_entry -> idle_run
-    idle_run: Do idle things
+    idle_entry: Start idle timer
+    idle_entry --> idle_run
+    idle_run: Wait for events
 }
 
-state ERROR {
-    error_entry: Do error entry things
-    error_entry -> error_run
-    error_run: Do error things
-    error_run -> error_exit
-    error_exit: Do error exit things
+IDLE --> BATTERY : Battery Timer Event (every 60 seconds)
+
+state BATTERY {
+    battery_entry: Prepare ADC
+    battery_entry --> battery_run
+    battery_run: Measure battery and update LED
+    battery_run --> IDLE : Return to idle
 }
 
 @enduml
