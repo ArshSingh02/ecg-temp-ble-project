@@ -5,4 +5,4 @@ find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(ecg-temp-ble-project)
 
 # make sure to add the source code for new libraries
-target_sources(app PRIVATE src/main.c src/read_temperature_sensor.c src/ble-lib.c)
+target_sources(app PRIVATE src/main.c src/read_temperature_sensor.c src/ble-lib.c src/heart_beat_peak_detection.c)

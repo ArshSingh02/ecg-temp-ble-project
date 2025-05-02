@@ -68,7 +68,7 @@ static const struct gpio_dt_spec heartbeat_led = GPIO_DT_SPEC_GET(DT_ALIAS(heart
 // static const struct gpio_dt_spec battery_led = GPIO_DT_SPEC_GET(DT_ALIAS(batterylevel), gpios);
 static const struct gpio_dt_spec average_hr_led = GPIO_DT_SPEC_GET(DT_ALIAS(avgheartrate), gpios);
 
-static const struct gpio_dt_spec measure_button = GPIO_DT_SPEC_GET(DT_ALIAS(sw0), gpios);
+static const struct gpio_dt_spec measure_button = GPIO_DT_SPEC_GET(DT_ALIAS(hrmeasure), gpios);
 static const struct gpio_dt_spec clear_button = GPIO_DT_SPEC_GET(DT_ALIAS(sw1), gpios);
 static const struct gpio_dt_spec reset_button = GPIO_DT_SPEC_GET(DT_ALIAS(sw2), gpios);
 
@@ -162,6 +162,15 @@ float check_battery_and_update_pwm(void) {
 
 
 float measure_average_heart_rate(void) {
+    if (!device_is_ready(adc_diff.dev)) {
+        LOG_ERR("Differential ADC not ready");
+        return -1.0f;
+    }
+
+    if (adc_channel_setup_dt(&adc_diff) < 0) {
+        LOG_ERR("Failed to setup ADC diff channel");
+        return -1.0f;
+    }
 
     struct adc_sequence seq = {
         .buffer = &ecg_buffer[0],
@@ -179,7 +188,7 @@ float measure_average_heart_rate(void) {
             LOG_ERR("ADC read failed at index %d (%d)", i, ret);
             return -1.0f;
         }
-        k_busy_wait(1000);
+        k_sleep(K_MSEC(1));
     }
 
     LOG_HEXDUMP_INF(ecg_buffer, sizeof(ecg_buffer), "ECG Buffer (HEX)");
@@ -187,6 +196,7 @@ float measure_average_heart_rate(void) {
     float bpm = compute_bpm(ecg_buffer, ECG_BUFFER_SIZE, ECG_SAMPLE_RATE_HZ, ECG_DURATION_SEC);
     return bpm;
 }
+
 
 
 
@@ -204,12 +214,13 @@ struct s_object {
 
 static void init_run(void *o) {
     if (!device_is_ready(heartbeat_led.port) ||
-    !device_is_ready(average_hr_led.port) ||
-    !device_is_ready(measure_button.port) ||
-    !device_is_ready(clear_button.port) ||
-    !device_is_ready(reset_button.port)) {
-    LOG_ERR("GPIO0 device not ready.");
-    smf_set_state(SMF_CTX(&s_obj), &states[ERROR]);
+        !device_is_ready(average_hr_led.port) ||
+        !device_is_ready(measure_button.port) ||
+        !device_is_ready(clear_button.port) ||
+        !device_is_ready(reset_button.port)) {
+        LOG_ERR("GPIO0 device not ready.");
+        smf_set_state(SMF_CTX(&s_obj), &states[ERROR]);
+        return;
     }
 
     gpio_pin_configure_dt(&heartbeat_led, GPIO_OUTPUT_INACTIVE);
@@ -222,14 +233,27 @@ static void init_run(void *o) {
     gpio_pin_configure_dt(&reset_button, GPIO_INPUT);
     gpio_pin_interrupt_configure_dt(&reset_button, GPIO_INT_EDGE_TO_ACTIVE);
 
-    gpio_init_callback(&measure_button_cb, measure_button_callback, BIT(measure_button.pin)); // associate callback with GPIO pin
+    gpio_init_callback(&measure_button_cb, measure_button_callback, BIT(measure_button.pin));
     gpio_add_callback_dt(&measure_button, &measure_button_cb);
 
-    gpio_init_callback(&clear_button_cb, clear_button_callback, BIT(clear_button.pin)); // associate callback with GPIO pin
+    gpio_init_callback(&clear_button_cb, clear_button_callback, BIT(clear_button.pin));
     gpio_add_callback_dt(&clear_button, &clear_button_cb);
 
-    gpio_init_callback(&reset_button_cb, reset_button_callback, BIT(reset_button.pin)); // associate callback with GPIO pin
+    gpio_init_callback(&reset_button_cb, reset_button_callback, BIT(reset_button.pin));
     gpio_add_callback_dt(&reset_button, &reset_button_cb);
+
+    // 🛠️ Setup ADC channel here BEFORE first battery check
+    if (!device_is_ready(adc_vadc.dev)) {
+        LOG_ERR("Battery ADC not ready in INIT");
+        smf_set_state(SMF_CTX(&s_obj), &states[ERROR]);
+        return;
+    }
+
+    if (adc_channel_setup_dt(&adc_vadc) < 0) {
+        LOG_ERR("Failed to setup battery ADC channel in INIT");
+        smf_set_state(SMF_CTX(&s_obj), &states[ERROR]);
+        return;
+    }
 
     LOG_INF("Initial battery check on boot...");
     check_battery_and_update_pwm();
@@ -237,12 +261,14 @@ static void init_run(void *o) {
     smf_set_state(SMF_CTX(&s_obj), &states[IDLE]);
 }
 
+
 static void idle_entry(void *o) {
     LOG_INF("Entering IDLE State");
-    k_timer_start(&battery_timer, K_NO_WAIT, K_MSEC(BATTERY_MEASURE_INTERVAL_MS));
+    k_timer_start(&battery_timer, K_MSEC(BATTERY_MEASURE_INTERVAL_MS), K_MSEC(BATTERY_MEASURE_INTERVAL_MS));
 }
 
 static void idle_run(void *o) {
+    LOG_INF("WAITING FOR BUTTON");
     uint32_t events = k_event_wait(&app_events, MEASURE_DATA | BATTERY_TIMER_EVENT, true, K_FOREVER);
     if (events & MEASURE_DATA) {
         smf_set_state(SMF_CTX(&s_obj), &states[MEASURE]);
@@ -325,6 +351,7 @@ int main(void) {
     while (1) {
 
         smf_run_state(SMF_CTX(&s_obj));
+        k_msleep(100);
         /* ret = read_temperature_sensor(temp_sensor, &temperature_degC);
         if (ret != 0) {
             LOG_ERR("There was a problem reading the temperature sensor (%d)", ret);
