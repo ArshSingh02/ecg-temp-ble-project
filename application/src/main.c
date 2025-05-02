@@ -21,12 +21,15 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
 #define ECG_DURATION_SEC 30
 #define ECG_BUFFER_SIZE (ECG_SAMPLE_RATE_HZ * ECG_DURATION_SEC)
 
+volatile bool led2_enabled = true;
+
 
 // function declarations
 
 const struct device *const temp_sensor = DEVICE_DT_GET_ONE(jedec_jc_42_4_temp);
 
 float temperature_degC;
+volatile float measured_bpm = 0.0f;
 
 K_EVENT_DEFINE(errors);
 
@@ -75,6 +78,7 @@ void measure_button_callback(const struct device *dev, struct gpio_callback *cb,
 }
 static struct gpio_callback clear_button_cb;
 void clear_button_callback(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
+    led2_enabled = false;
     k_event_post(&app_events, CLEAR_LED);
 }
 static struct gpio_callback reset_button_cb;
@@ -92,6 +96,37 @@ void heartbeat_thread(void *, void *, void *) {
     } 
 }
 K_THREAD_DEFINE(heartbeat_thread_id, 1024, heartbeat_thread, NULL, NULL, NULL, 5, 0, 0);
+
+void average_hr_led_thread(void *, void *, void *) {
+    while (1) {
+        if (!led2_enabled) {
+            gpio_pin_set_dt(&average_hr_led, 0);
+            k_msleep(200);
+            continue;
+        }
+
+        float bpm = measured_bpm;
+        if (bpm >= 40.0f && bpm <= 200.0f) {
+            float hz = bpm / 60.0f;
+            int period_ms = (int)(1000.0f / hz);
+            int on_time = period_ms / 4;
+            int off_time = period_ms - on_time;
+
+            gpio_pin_set_dt(&average_hr_led, 1);
+            k_msleep(on_time);
+            gpio_pin_set_dt(&average_hr_led, 0);
+            k_msleep(off_time);
+        } else {
+            gpio_pin_set_dt(&average_hr_led, 0);
+            k_msleep(200);
+        }
+    }
+}
+
+
+K_THREAD_DEFINE(average_hr_led_thread_id, 1024, average_hr_led_thread,
+                NULL, NULL, NULL, 5, 0, 0);
+
 
 // Helper Functions
 float check_battery_and_update_pwm(void) {
@@ -254,10 +289,8 @@ static void measure_run(void *o) {
     }
 
     LOG_INF("Computed Average Heart Rate: %.1f BPM", bpm);
-
-    gpio_pin_set_dt(&average_hr_led, 1);
-    k_sleep(K_SECONDS(1));
-    gpio_pin_set_dt(&average_hr_led, 0);
+    measured_bpm = bpm;
+    led2_enabled = true;
 
     smf_set_state(SMF_CTX(&s_obj), &states[IDLE]);
 }
@@ -266,7 +299,7 @@ static void measure_run(void *o) {
 static const struct smf_state states[] = {
     [INIT] = SMF_CREATE_STATE(NULL, init_run, NULL, NULL, NULL),
     [IDLE] = SMF_CREATE_STATE(idle_entry, idle_run, NULL, NULL, NULL),
-    [MEASURE] = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
+    [MEASURE] = SMF_CREATE_STATE(measure_entry, measure_run, NULL, NULL, NULL),
     [BATTERY] = SMF_CREATE_STATE(battery_entry, battery_run, NULL, NULL, NULL),
     [BLUETOOTH] = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
     [ERROR] = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
@@ -292,8 +325,6 @@ int main(void) {
     while (1) {
 
         smf_run_state(SMF_CTX(&s_obj));
-        k_timer_start(&battery_timer, K_NO_WAIT, K_MSEC(BATTERY_MEASURE_INTERVAL_MS));
-
         /* ret = read_temperature_sensor(temp_sensor, &temperature_degC);
         if (ret != 0) {
             LOG_ERR("There was a problem reading the temperature sensor (%d)", ret);
