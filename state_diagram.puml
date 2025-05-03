@@ -8,6 +8,7 @@ state INIT {
 }
 
 INIT --> IDLE : Successful initialization
+INIT --> ERROR : ADC/LED init failure
 
 state IDLE {
     idle_entry: Start idle timer  
@@ -17,6 +18,7 @@ state IDLE {
 
 IDLE --> BATTERY : Battery Timer Event (every 60 seconds)
 IDLE --> MEASURE : Measure Button Pressed
+IDLE --> ERROR : Any error detected
 
 state BATTERY {
     battery_entry: Prepare ADC  
@@ -24,6 +26,7 @@ state BATTERY {
     battery_run: Measure battery and update LED  
 }
 BATTERY --> IDLE : Return to idle
+BATTERY --> ERROR : ADC error
 
 state MEASURE {
     measure_entry: Setup ECG and temp sensors  
@@ -31,5 +34,13 @@ state MEASURE {
     measure_run: Compute BPM and temperature  
 }
 MEASURE --> IDLE : Return to idle
+MEASURE --> ERROR : ADC/temp/error event
+
+state ERROR {
+    error_entry: Disable timers & PWM, activate error flags
+    error_entry --> error_run
+    error_run: Wait for reset button
+}
+ERROR --> INIT : Reset button pressed
 
 @enduml

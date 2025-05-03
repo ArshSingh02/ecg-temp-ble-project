@@ -21,11 +21,34 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
 #define ECG_DURATION_SEC 30
 #define ECG_BUFFER_SIZE (ECG_SAMPLE_RATE_HZ * ECG_DURATION_SEC)
 
+#define ERROR_LED_ON_TIME_MS 500
+#define ERROR_LED_PERIOD_USEC (ERROR_LED_ON_TIME_MS * 1000)
+
 static struct adc_sequence ecg_seq;
 static volatile int ecg_sample_index = 0;
 
 volatile bool led2_enabled = true;
+volatile bool error_state_flag = false;
 
+static struct k_poll_signal adc_signal;
+
+static enum adc_action ecg_adc_callback(const struct device *dev,
+    const struct adc_sequence *sequence,
+    void *user_data)
+{
+    ARG_UNUSED(dev);
+    ARG_UNUSED(sequence);
+    ARG_UNUSED(user_data);
+
+    ecg_sample_index++;
+    return ADC_ACTION_FINISH;
+}
+
+static struct adc_sequence_options ecg_seq_opts = {
+    .callback = ecg_adc_callback,
+    .user_data = NULL,
+    .extra_samplings = 0,
+};
 
 // function declarations
 
@@ -34,15 +57,23 @@ const struct device *const temp_sensor = DEVICE_DT_GET_ONE(jedec_jc_42_4_temp);
 float temperature_degC;
 volatile float measured_bpm = 0.0f;
 
-K_EVENT_DEFINE(errors);
-
-// Define button events
+// Define Device Events
 K_EVENT_DEFINE(app_events);
 // Represent Button with Mask
 #define MEASURE_DATA BIT(0)
 #define CLEAR_LED BIT(1)
 #define RESET_DEVICE BIT(2)
 #define BATTERY_TIMER_EVENT BIT(3)
+
+// Define Error Events
+K_EVENT_DEFINE(errors);
+// Represent Errors with Mask
+#define MEASURE_ERROR BIT(0)
+#define LED_BUTTON_ERROR BIT(1)
+#define ADC_ERROR BIT(2)
+#define TEMP_SENSOR_ERROR BIT(3)
+#define BLE_ERROR BIT(4)
+
 
 void battery_timer_handler(struct k_timer *timer_id) {
     k_event_post(&app_events, BATTERY_TIMER_EVENT);
@@ -70,6 +101,7 @@ static const struct pwm_dt_spec pwm1 = PWM_DT_SPEC_GET(DT_ALIAS(pwm1));
 static const struct gpio_dt_spec heartbeat_led = GPIO_DT_SPEC_GET(DT_ALIAS(heartbeat), gpios);
 // static const struct gpio_dt_spec battery_led = GPIO_DT_SPEC_GET(DT_ALIAS(batterylevel), gpios);
 static const struct gpio_dt_spec average_hr_led = GPIO_DT_SPEC_GET(DT_ALIAS(avgheartrate), gpios);
+static const struct gpio_dt_spec error_led = GPIO_DT_SPEC_GET(DT_ALIAS(erroronly), gpios);
 
 static const struct gpio_dt_spec measure_button = GPIO_DT_SPEC_GET(DT_ALIAS(hrmeasure), gpios);
 static const struct gpio_dt_spec clear_button = GPIO_DT_SPEC_GET(DT_ALIAS(sw1), gpios);
@@ -79,30 +111,61 @@ static struct gpio_callback measure_button_cb;
 void measure_button_callback(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
     k_event_post(&app_events, MEASURE_DATA);
 }
+
 static struct gpio_callback clear_button_cb;
 void clear_button_callback(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
-    LOG_INF("Clearing LED2");
-    led2_enabled = false;
-    k_event_post(&app_events, CLEAR_LED);
+    if (error_state_flag) {
+        return;
+    }
+
+    if (led2_enabled) {
+        LOG_INF("Clearing LED2");
+        led2_enabled = false;
+        k_event_post(&app_events, CLEAR_LED);
+    } else {
+        LOG_WRN("LED2 is already off. No heart rate measurement taken yet.");
+    }
 }
+
+
 static struct gpio_callback reset_button_cb;
 void reset_button_callback(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
+    LOG_INF("Reset Button Pressed");
     k_event_post(&app_events, RESET_DEVICE);
 }
+
+// State Framework
+enum states { INIT, IDLE, MEASURE, BATTERY, BLUETOOTH, ERROR };
+
+int state = INIT;
+
+static const struct smf_state states[];
+struct s_object {
+    struct smf_ctx ctx;
+} s_obj;
 
 // Initialize Threads
 void heartbeat_thread(void *, void *, void *) {
     while (1) {
-        gpio_pin_toggle_dt(&heartbeat_led);
-        k_msleep(500);
-        gpio_pin_toggle_dt(&heartbeat_led);
-        k_msleep(500);
-    } 
+        if (!error_state_flag) {
+            gpio_pin_set_dt(&heartbeat_led, 1);
+            k_msleep(500);
+            gpio_pin_set_dt(&heartbeat_led, 0);
+            k_msleep(500);
+        } else {
+            k_msleep(100);
+        }
+    }
 }
 K_THREAD_DEFINE(heartbeat_thread_id, 1024, heartbeat_thread, NULL, NULL, NULL, 5, 0, 0);
 
 void average_hr_led_thread(void *, void *, void *) {
     while (1) {
+        if (error_state_flag) {
+            k_msleep(100);
+            continue;
+        }
+
         if (!led2_enabled) {
             gpio_pin_set_dt(&average_hr_led, 0);
             k_msleep(200);
@@ -131,6 +194,27 @@ void average_hr_led_thread(void *, void *, void *) {
 K_THREAD_DEFINE(average_hr_led_thread_id, 1024, average_hr_led_thread,
                 NULL, NULL, NULL, 5, 0, 0);
 
+void error_leds_thread(void *, void *, void *) {
+    while (1) {
+        if (error_state_flag) {
+            gpio_pin_set_dt(&heartbeat_led, 1);
+            pwm_set_dt(&pwm1, ERROR_LED_PERIOD_USEC, ERROR_LED_PERIOD_USEC);
+            gpio_pin_set_dt(&average_hr_led, 1);
+            gpio_pin_set_dt(&error_led, 1);
+            k_msleep(ERROR_LED_ON_TIME_MS);
+            gpio_pin_set_dt(&heartbeat_led, 0);
+            pwm_set_dt(&pwm1, ERROR_LED_PERIOD_USEC, 0);
+            gpio_pin_set_dt(&average_hr_led, 0);
+            gpio_pin_set_dt(&error_led, 0);
+            k_msleep(ERROR_LED_ON_TIME_MS);
+        } else {
+            k_msleep(100);
+        }
+    }
+}
+
+K_THREAD_DEFINE(error_leds_thread_id, 1024, error_leds_thread,
+                NULL, NULL, NULL, 5, 0, 0);
 
 // Helper Functions
 float check_battery_and_update_pwm(void) {
@@ -178,13 +262,17 @@ void ecg_sample_work_handler(struct k_work *work) {
     }
 
     ecg_seq.buffer = &ecg_buffer[ecg_sample_index];
-    int ret = adc_read(adc_diff.dev, &ecg_seq);
-    if (ret < 0) {
-        LOG_ERR("ADC read failed at index %d (%d)", ecg_sample_index, ret);
-    } else {
-        ecg_sample_index++;
+    ecg_seq.buffer_size = sizeof(int16_t);
+    ecg_seq.options = &ecg_seq_opts;  // <--- CRITICAL FIX
+
+    int err = adc_read_async(adc_diff.dev, &ecg_seq, &adc_signal);
+    if (err < 0) {
+        LOG_ERR("ADC async read failed at index %d (%d)", ecg_sample_index, err);  
+        k_timer_stop(&ecg_sample_timer);
+        smf_set_state(SMF_CTX(&s_obj), &states[ERROR]);
     }
 }
+
 
 void ecg_sample_timer_handler(struct k_timer *timer) {
     k_work_submit(&ecg_sample_work);
@@ -215,6 +303,13 @@ float measure_average_heart_rate(void) {
     k_timer_start(&ecg_sample_timer, K_NO_WAIT, K_MSEC(1));
 
     while (ecg_sample_index < ECG_BUFFER_SIZE) {
+        uint32_t events = k_event_wait(&app_events, MEASURE_DATA, false, K_NO_WAIT);
+        if (events & MEASURE_DATA) {
+            LOG_ERR("ERROR: Measurement button pressed again during ECG sampling.");
+            k_event_post(&errors, MEASURE_ERROR);
+            k_timer_stop(&ecg_sample_timer);
+            return -1.0f;
+        }
         k_sleep(K_MSEC(1));
     }
 
@@ -235,30 +330,25 @@ float read_temperature(void) {
 }
 
 
-// State Framework
-enum states { INIT, IDLE, MEASURE, BATTERY, BLUETOOTH, ERROR };
-
-int state = INIT;
-
-static const struct smf_state states[];
-struct s_object {
-    struct smf_ctx ctx;
-} s_obj;
-
+// State Framework Functions
 
 static void init_run(void *o) {
     if (!device_is_ready(heartbeat_led.port) ||
         !device_is_ready(average_hr_led.port) ||
+        !device_is_ready(error_led.port) ||
         !device_is_ready(measure_button.port) ||
         !device_is_ready(clear_button.port) ||
         !device_is_ready(reset_button.port)) {
         LOG_ERR("GPIO0 device not ready.");
+        k_event_post(&errors, LED_BUTTON_ERROR);
         smf_set_state(SMF_CTX(&s_obj), &states[ERROR]);
+
         return;
     }
 
     gpio_pin_configure_dt(&heartbeat_led, GPIO_OUTPUT_INACTIVE);
     gpio_pin_configure_dt(&average_hr_led, GPIO_OUTPUT_INACTIVE);
+    gpio_pin_configure_dt(&error_led, GPIO_OUTPUT_INACTIVE);
 
     gpio_pin_configure_dt(&measure_button, GPIO_INPUT);
     gpio_pin_interrupt_configure_dt(&measure_button, GPIO_INT_EDGE_TO_ACTIVE);
@@ -276,15 +366,16 @@ static void init_run(void *o) {
     gpio_init_callback(&reset_button_cb, reset_button_callback, BIT(reset_button.pin));
     gpio_add_callback_dt(&reset_button, &reset_button_cb);
 
-    // 🛠️ Setup ADC channel here BEFORE first battery check
     if (!device_is_ready(adc_vadc.dev)) {
         LOG_ERR("Battery ADC not ready in INIT");
+        k_event_post(&errors, ADC_ERROR);
         smf_set_state(SMF_CTX(&s_obj), &states[ERROR]);
         return;
     }
 
     if (adc_channel_setup_dt(&adc_vadc) < 0) {
         LOG_ERR("Failed to setup battery ADC channel in INIT");
+        k_event_post(&errors, ADC_ERROR);
         smf_set_state(SMF_CTX(&s_obj), &states[ERROR]);
         return;
     }
@@ -303,6 +394,17 @@ static void idle_entry(void *o) {
 
 static void idle_run(void *o) {
     LOG_INF("WAITING FOR BUTTON");
+
+    uint32_t error_flags = k_event_wait(&errors,
+        MEASURE_ERROR | LED_BUTTON_ERROR | ADC_ERROR | TEMP_SENSOR_ERROR | BLE_ERROR,
+        false, K_NO_WAIT);
+    
+    if (error_flags) {
+        LOG_ERR("Error detected: 0x%X", error_flags);
+        smf_set_state(SMF_CTX(&s_obj), &states[ERROR]);
+        return;
+    }
+
     uint32_t events = k_event_wait(&app_events, MEASURE_DATA | BATTERY_TIMER_EVENT, true, K_FOREVER);
     if (events & MEASURE_DATA) {
         smf_set_state(SMF_CTX(&s_obj), &states[MEASURE]);
@@ -316,31 +418,46 @@ static void battery_entry(void *o) {
 
     if (!device_is_ready(adc_vadc.dev)) {
         LOG_ERR("Battery ADC not ready");
-        smf_set_state(SMF_CTX(&s_obj), &states[ERROR]);
+        k_event_post(&errors, ADC_ERROR);
         return;
     }
 
     if (adc_channel_setup_dt(&adc_vadc) < 0) {
         LOG_ERR("Failed to setup battery ADC channel");
-        smf_set_state(SMF_CTX(&s_obj), &states[ERROR]);
+        k_event_post(&errors, ADC_ERROR);
         return;
     }
 }
 
 static void battery_run(void *o) {
+    LOG_INF("BATTERY RUN: Checking battery level");
+
+    uint32_t error_flags = k_event_wait(&errors,
+        MEASURE_ERROR | LED_BUTTON_ERROR | ADC_ERROR | TEMP_SENSOR_ERROR | BLE_ERROR,
+        false, K_NO_WAIT);
+    
+    if (error_flags) {
+        LOG_ERR("Error detected: 0x%X", error_flags);
+        smf_set_state(SMF_CTX(&s_obj), &states[ERROR]);
+        return;
+    }
+
     check_battery_and_update_pwm();
     smf_set_state(SMF_CTX(&s_obj), &states[IDLE]);
 }
 
 static void measure_entry(void *o) {
     LOG_INF("Measure ENTRY");
+    (void)k_event_wait(&app_events, MEASURE_DATA, true, K_NO_WAIT);
+
     if (!device_is_ready(adc_diff.dev)) {
         LOG_ERR("ADC not ready");
-        smf_set_state(SMF_CTX(&s_obj), &states[ERROR]);
+        k_event_post(&errors, ADC_ERROR);
         return;
     }
     if (!device_is_ready(temp_sensor)) {
         LOG_ERR("Temperature sensor %s is not ready", temp_sensor->name);
+        k_event_post(&errors, TEMP_SENSOR_ERROR);
         return -1;
     }
     else {
@@ -349,9 +466,23 @@ static void measure_entry(void *o) {
 }
 
 static void measure_run(void *o) {
+    LOG_INF("Measure RUN: Starting ECG measurement");
+
+    uint32_t error_flags = k_event_wait(&errors,
+        MEASURE_ERROR | LED_BUTTON_ERROR | ADC_ERROR | TEMP_SENSOR_ERROR | BLE_ERROR,
+        false, K_NO_WAIT);
+    
+    if (error_flags) {
+        LOG_ERR("Error detected: 0x%X", error_flags);
+        smf_set_state(SMF_CTX(&s_obj), &states[ERROR]);
+        return;
+    }
+
     float bpm = measure_average_heart_rate();
     float temp = read_temperature();
     if (bpm < 0) {
+        LOG_ERR("Error measuring heart rate");
+        k_event_post(&errors, MEASURE_ERROR);
         smf_set_state(SMF_CTX(&s_obj), &states[ERROR]);
         return;
     }
@@ -364,6 +495,31 @@ static void measure_run(void *o) {
     smf_set_state(SMF_CTX(&s_obj), &states[IDLE]);
 }
 
+static void error_entry(void *o) {
+    LOG_ERR("Entering ERROR state");
+
+    k_timer_stop(&battery_timer);
+    k_timer_stop(&ecg_sample_timer);
+    pwm_set_pulse_dt(&pwm1, 0);
+
+    error_state_flag = true;
+    k_event_clear(&app_events, MEASURE_DATA | BATTERY_TIMER_EVENT);
+}
+
+
+static void error_run(void *o) {
+    LOG_INF("In ERROR state... waiting for reset");
+
+    uint32_t events = k_event_wait(&app_events, RESET_DEVICE, true, K_FOREVER);
+
+    if (events & RESET_DEVICE) {
+        LOG_INF("Reset event received. Clearing error and reinitializing.");
+        error_state_flag = false;
+        k_event_clear(&errors, MEASURE_ERROR | ADC_ERROR | TEMP_SENSOR_ERROR | BLE_ERROR);
+        smf_set_state(SMF_CTX(&s_obj), &states[INIT]);
+    }
+}
+
 
 static const struct smf_state states[] = {
     [INIT] = SMF_CREATE_STATE(NULL, init_run, NULL, NULL, NULL),
@@ -371,7 +527,7 @@ static const struct smf_state states[] = {
     [MEASURE] = SMF_CREATE_STATE(measure_entry, measure_run, NULL, NULL, NULL),
     [BATTERY] = SMF_CREATE_STATE(battery_entry, battery_run, NULL, NULL, NULL),
     [BLUETOOTH] = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
-    [ERROR] = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
+    [ERROR] = SMF_CREATE_STATE(error_entry, error_run, NULL, NULL, NULL),
 };
 
 int main(void) {
@@ -381,6 +537,8 @@ int main(void) {
     ret = bluetooth_init(&bluetooth_callbacks, &remote_service_callbacks);
 
     */
+
+    k_poll_signal_init(&adc_signal);
    
     smf_set_initial(SMF_CTX(&s_obj), &states[INIT]);
     // read the temperature every MEASUREMENT_DELAY_MS
