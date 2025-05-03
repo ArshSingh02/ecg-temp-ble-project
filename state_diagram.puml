@@ -30,7 +30,8 @@ state MEASURE {
     measure_run: Sample ECG (30s)\nCompute BPM\nRead temperature\nSend via BLE  
 }
 MEASURE --> IDLE : Measurement complete  
-MEASURE --> ERROR : ADC/Temp/BLE error  
+MEASURE --> ERROR : ADC/Temp/BLE error 
+MEASURE --> ERROR : Button pressed (MEASURE event)  
 
 state ERROR {
     error_entry: Stop timers & PWM\nLog error\nRaise error flag  
