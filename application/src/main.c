@@ -137,7 +137,6 @@ void clear_button_callback(const struct device *dev, struct gpio_callback *cb, u
 
 static struct gpio_callback reset_button_cb;
 void reset_button_callback(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
-    LOG_INF("Reset Button Pressed");
     k_event_post(&app_events, RESET_DEVICE);
 }
 
@@ -551,7 +550,7 @@ static void error_run(void *o) {
 
         k_event_clear(&errors, MEASURE_ERROR | ADC_ERROR | TEMP_SENSOR_ERROR | BLE_ERROR);
         
-        smf_set_state(SMF_CTX(&s_obj), &states[INIT]);
+        smf_set_state(SMF_CTX(&s_obj), &states[IDLE]);
     }
 }
 
