@@ -8,7 +8,7 @@ static K_SEM_DEFINE(bt_init_ok, 1, 1);
 
 #define DEVICE_NAME CONFIG_BT_DEVICE_NAME
 #define DEVICE_NAME_LEN (sizeof(DEVICE_NAME)-1)
-#define NOMINAL_BATTERY_VOLT_MV 3700  // this might make more sense to have in main.c
+#define NOMINAL_BATTERY_VOLT_MV 3000  // this might make more sense to have in main.c
 
 // extern means this is defined elsewhere (in this case, main.c)
 extern int32_t temperature_degC;  // temperature data characteristic will read from this variable
@@ -173,6 +173,8 @@ int bluetooth_init(struct bt_conn_cb *bt_cb, struct bt_remote_srv_cb *remote_cb)
     if (ret) {
         LOG_ERR("Could not start advertising (ret = %d)", ret);
         return ret;
+    } else {
+        LOG_INF("Advertising successfully started");
     }
     return ret;
 }
@@ -194,5 +196,15 @@ void bluetooth_set_battery_level(int32_t raw_mV) {
     int err = bt_bas_set_battery_level((int)normalized_level);
     if (err) {
         LOG_ERR("BAS set error (err = %d)", err);
+    }
+}
+
+void bluetooth_set_heart_rate(uint8_t bpm) {
+    float heart_rate_bpm = bpm;
+    int err = bt_hrs_notify(heart_rate_bpm);
+    if (err) {
+        LOG_WRN("HRS notify failed: %d", err);
+    } else {
+        LOG_INF("Heart rate notified: %d BPM", bpm);
     }
 }
