@@ -29,7 +29,6 @@ static volatile int ecg_sample_index = 0;
 
 volatile bool led2_enabled = true;
 volatile bool error_state_flag = false;
-static bool bluetooth_initialized = false;
 
 float battery_pct = 0.0f;
 
@@ -386,16 +385,15 @@ static void init_run(void *o) {
         return;
     }
 
-    if (!bluetooth_initialized) {
-        int ret = bluetooth_init(&bluetooth_callbacks, &remote_service_callbacks);
-        if (ret < 0) {
-            LOG_ERR("Bluetooth init failed (%d)", ret);
-            k_event_post(&errors, BLE_ERROR);
-            smf_set_state(SMF_CTX(&s_obj), &states[ERROR]);
-            return;
-        }
-        bluetooth_initialized = true;
+    
+    int ret = bluetooth_init(&bluetooth_callbacks, &remote_service_callbacks);
+    if (ret < 0) {
+        LOG_ERR("Bluetooth init failed (%d)", ret);
+        k_event_post(&errors, BLE_ERROR);
+        smf_set_state(SMF_CTX(&s_obj), &states[ERROR]);
+        return;
     }
+    
 
     LOG_INF("Initial battery check on boot...");
 
