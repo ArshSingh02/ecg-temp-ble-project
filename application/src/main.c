@@ -21,10 +21,13 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
 #define ECG_DURATION_SEC 30
 #define ECG_BUFFER_SIZE (ECG_SAMPLE_RATE_HZ * ECG_DURATION_SEC)
 
+#define ERROR_LED_ON_TIME_MS 500
+
 static struct adc_sequence ecg_seq;
 static volatile int ecg_sample_index = 0;
 
 volatile bool led2_enabled = true;
+volatile bool error_state_flag = false;
 
 
 // function declarations
@@ -78,6 +81,7 @@ static const struct pwm_dt_spec pwm1 = PWM_DT_SPEC_GET(DT_ALIAS(pwm1));
 static const struct gpio_dt_spec heartbeat_led = GPIO_DT_SPEC_GET(DT_ALIAS(heartbeat), gpios);
 // static const struct gpio_dt_spec battery_led = GPIO_DT_SPEC_GET(DT_ALIAS(batterylevel), gpios);
 static const struct gpio_dt_spec average_hr_led = GPIO_DT_SPEC_GET(DT_ALIAS(avgheartrate), gpios);
+static const struct gpio_dt_spec error_led = GPIO_DT_SPEC_GET(DT_ALIAS(erroronly), gpios);
 
 static const struct gpio_dt_spec measure_button = GPIO_DT_SPEC_GET(DT_ALIAS(hrmeasure), gpios);
 static const struct gpio_dt_spec clear_button = GPIO_DT_SPEC_GET(DT_ALIAS(sw1), gpios);
@@ -135,10 +139,26 @@ void average_hr_led_thread(void *, void *, void *) {
     }
 }
 
-
 K_THREAD_DEFINE(average_hr_led_thread_id, 1024, average_hr_led_thread,
                 NULL, NULL, NULL, 5, 0, 0);
 
+void error_leds_thread(void *, void *, void *) {
+    while (error_state_flag) {
+        gpio_pin_set_dt(&heartbeat_led, 1);
+        pwm_set_pulse_dt(&pwm1, pwm1.period);
+        gpio_pin_set_dt(&average_hr_led, 1);
+        gpio_pin_set_dt(&error_led, 1);
+        k_msleep(ERROR_LED_ON_TIME_MS);
+        gpio_pin_set_dt(&heartbeat_led, 0);
+        pwm_set_pulse_dt(&pwm1, 0);
+        gpio_pin_set_dt(&average_hr_led, 0);
+        gpio_pin_set_dt(&error_led, 0);
+        k_msleep(ERROR_LED_ON_TIME_MS);
+    }
+}
+
+K_THREAD_DEFINE(error_leds_thread_id, 1024, error_leds_thread,
+                NULL, NULL, NULL, 5, 0, 0);
 
 // Helper Functions
 float check_battery_and_update_pwm(void) {
@@ -372,6 +392,15 @@ static void measure_run(void *o) {
     smf_set_state(SMF_CTX(&s_obj), &states[IDLE]);
 }
 
+static void error_entry(void *o) {
+
+}
+
+
+static void error_run(void *o) {
+
+}
+
 
 static const struct smf_state states[] = {
     [INIT] = SMF_CREATE_STATE(NULL, init_run, NULL, NULL, NULL),
@@ -379,7 +408,7 @@ static const struct smf_state states[] = {
     [MEASURE] = SMF_CREATE_STATE(measure_entry, measure_run, NULL, NULL, NULL),
     [BATTERY] = SMF_CREATE_STATE(battery_entry, battery_run, NULL, NULL, NULL),
     [BLUETOOTH] = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
-    [ERROR] = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
+    [ERROR] = SMF_CREATE_STATE(error_entry, error_run, NULL, NULL, NULL),
 };
 
 int main(void) {
