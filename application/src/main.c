@@ -30,7 +30,13 @@ static volatile int ecg_sample_index = 0;
 volatile bool led2_enabled = true;
 volatile bool error_state_flag = false;
 
+float battery_pct = 0.0f;
+
 static struct k_poll_signal adc_signal;
+
+extern enum bt_data_notifications_enabled notifications_enabled;
+extern struct bt_gatt_service remote_srv;
+
 
 static enum adc_action ecg_adc_callback(const struct device *dev,
     const struct adc_sequence *sequence,
@@ -229,7 +235,7 @@ float check_battery_and_update_pwm(void) {
     if (adc_read(adc_vadc.dev, &seq) == 0) {
         int32_t val_mv = adc_buf;
         if (adc_raw_to_millivolts_dt(&adc_vadc, &val_mv) == 0) {
-            float battery_pct = CLAMP(val_mv / 3000.0f, 0.0f, 1.0f);
+            battery_pct = val_mv / 3000.0f;
             uint32_t pulse_width = (uint32_t)(battery_pct * PWM_PERIOD_USEC);
 
             int ret = pwm_set_pulse_dt(&pwm1, pulse_width * 1000);
@@ -238,7 +244,7 @@ float check_battery_and_update_pwm(void) {
             }
 
             LOG_INF("Battery level: %d mV → %.1f%% brightness", val_mv, battery_pct * 100);
-            return battery_pct;
+            return (float)val_mv;
         } else {
             LOG_ERR("ADC to millivolts conversion failed");
         }
@@ -380,8 +386,19 @@ static void init_run(void *o) {
         return;
     }
 
+    int ret = bluetooth_init(&bluetooth_callbacks, &remote_service_callbacks);
+    if (ret < 0) {
+        LOG_ERR("Bluetooth init failed (%d)", ret);
+        k_event_post(&errors, BLE_ERROR);
+        smf_set_state(SMF_CTX(&s_obj), &states[ERROR]);
+        return;
+    }
+
     LOG_INF("Initial battery check on boot...");
     check_battery_and_update_pwm();
+
+    uint16_t battery_mv = (uint16_t)check_battery_and_update_pwm();
+    bluetooth_set_battery_level(battery_mv);
 
     smf_set_state(SMF_CTX(&s_obj), &states[IDLE]);
 }
@@ -443,7 +460,7 @@ static void battery_run(void *o) {
     }
 
     check_battery_and_update_pwm();
-    smf_set_state(SMF_CTX(&s_obj), &states[IDLE]);
+    smf_set_state(SMF_CTX(&s_obj), &states[BLUETOOTH]);
 }
 
 static void measure_entry(void *o) {
@@ -458,7 +475,7 @@ static void measure_entry(void *o) {
     if (!device_is_ready(temp_sensor)) {
         LOG_ERR("Temperature sensor %s is not ready", temp_sensor->name);
         k_event_post(&errors, TEMP_SENSOR_ERROR);
-        return -1;
+        return;
     }
     else {
         LOG_INF("Temperature sensor %s is ready", temp_sensor->name);
@@ -492,7 +509,7 @@ static void measure_run(void *o) {
     measured_bpm = bpm;
     led2_enabled = true;
 
-    smf_set_state(SMF_CTX(&s_obj), &states[IDLE]);
+    smf_set_state(SMF_CTX(&s_obj), &states[BLUETOOTH]);
 }
 
 static void error_entry(void *o) {
@@ -520,13 +537,27 @@ static void error_run(void *o) {
     }
 }
 
+static void bluetooth_entry(void *o) {
+    LOG_INF("Entering BLUETOOTH state");
+}
+
+static void bluetooth_run(void *o) {
+    LOG_INF("Sending BLE notifications...");
+
+    uint16_t battery_mv = (uint16_t)check_battery_and_update_pwm();
+    bluetooth_set_battery_level(battery_mv);
+
+    smf_set_state(SMF_CTX(&s_obj), &states[IDLE]);
+}
+
+
 
 static const struct smf_state states[] = {
     [INIT] = SMF_CREATE_STATE(NULL, init_run, NULL, NULL, NULL),
     [IDLE] = SMF_CREATE_STATE(idle_entry, idle_run, NULL, NULL, NULL),
     [MEASURE] = SMF_CREATE_STATE(measure_entry, measure_run, NULL, NULL, NULL),
     [BATTERY] = SMF_CREATE_STATE(battery_entry, battery_run, NULL, NULL, NULL),
-    [BLUETOOTH] = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
+    [BLUETOOTH] = SMF_CREATE_STATE(bluetooth_entry, bluetooth_run, NULL, NULL, NULL),
     [ERROR] = SMF_CREATE_STATE(error_entry, error_run, NULL, NULL, NULL),
 };
 

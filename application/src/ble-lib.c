@@ -173,6 +173,8 @@ int bluetooth_init(struct bt_conn_cb *bt_cb, struct bt_remote_srv_cb *remote_cb)
     if (ret) {
         LOG_ERR("Could not start advertising (ret = %d)", ret);
         return ret;
+    } else {
+        LOG_INF("Advertising successfully started");
     }
     return ret;
 }
