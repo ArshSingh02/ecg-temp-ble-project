@@ -111,12 +111,23 @@ static struct gpio_callback measure_button_cb;
 void measure_button_callback(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
     k_event_post(&app_events, MEASURE_DATA);
 }
+
 static struct gpio_callback clear_button_cb;
 void clear_button_callback(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
-    LOG_INF("Clearing LED2");
-    led2_enabled = false;
-    k_event_post(&app_events, CLEAR_LED);
+    if (error_state_flag) {
+        return;
+    }
+
+    if (led2_enabled) {
+        LOG_INF("Clearing LED2");
+        led2_enabled = false;
+        k_event_post(&app_events, CLEAR_LED);
+    } else {
+        LOG_WRN("LED2 is already off. No heart rate measurement taken yet.");
+    }
 }
+
+
 static struct gpio_callback reset_button_cb;
 void reset_button_callback(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
     LOG_INF("Reset Button Pressed");
