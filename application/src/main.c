@@ -22,6 +22,7 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
 #define ECG_BUFFER_SIZE (ECG_SAMPLE_RATE_HZ * ECG_DURATION_SEC)
 
 #define ERROR_LED_ON_TIME_MS 500
+#define ERROR_LED_PERIOD_USEC (ERROR_LED_ON_TIME_MS * 1000)
 
 static struct adc_sequence ecg_seq;
 static volatile int ecg_sample_index = 0;
@@ -29,22 +30,25 @@ static volatile int ecg_sample_index = 0;
 volatile bool led2_enabled = true;
 volatile bool error_state_flag = false;
 
-static void ecg_adc_callback(const struct device *dev,
+static struct k_poll_signal adc_signal;
+
+static enum adc_action ecg_adc_callback(const struct device *dev,
     const struct adc_sequence *sequence,
     void *user_data)
 {
-ARG_UNUSED(dev);
-ARG_UNUSED(sequence);
-ARG_UNUSED(user_data);
+    ARG_UNUSED(dev);
+    ARG_UNUSED(sequence);
+    ARG_UNUSED(user_data);
 
-ecg_sample_index++;
+    ecg_sample_index++;
+    return ADC_ACTION_FINISH;
 }
 
-static const struct adc_async_cb adc_signal = {
-    .handler = ecg_adc_callback,
+static struct adc_sequence_options ecg_seq_opts = {
+    .callback = ecg_adc_callback,
     .user_data = NULL,
+    .extra_samplings = 0,
 };
-
 
 // function declarations
 
@@ -119,19 +123,38 @@ void reset_button_callback(const struct device *dev, struct gpio_callback *cb, u
     k_event_post(&app_events, RESET_DEVICE);
 }
 
+// State Framework
+enum states { INIT, IDLE, MEASURE, BATTERY, BLUETOOTH, ERROR };
+
+int state = INIT;
+
+static const struct smf_state states[];
+struct s_object {
+    struct smf_ctx ctx;
+} s_obj;
+
 // Initialize Threads
 void heartbeat_thread(void *, void *, void *) {
     while (1) {
-        gpio_pin_toggle_dt(&heartbeat_led);
-        k_msleep(500);
-        gpio_pin_toggle_dt(&heartbeat_led);
-        k_msleep(500);
-    } 
+        if (!error_state_flag) {
+            gpio_pin_set_dt(&heartbeat_led, 1);
+            k_msleep(500);
+            gpio_pin_set_dt(&heartbeat_led, 0);
+            k_msleep(500);
+        } else {
+            k_msleep(100);
+        }
+    }
 }
 K_THREAD_DEFINE(heartbeat_thread_id, 1024, heartbeat_thread, NULL, NULL, NULL, 5, 0, 0);
 
 void average_hr_led_thread(void *, void *, void *) {
     while (1) {
+        if (error_state_flag) {
+            k_msleep(100);
+            continue;
+        }
+
         if (!led2_enabled) {
             gpio_pin_set_dt(&average_hr_led, 0);
             k_msleep(200);
@@ -156,21 +179,26 @@ void average_hr_led_thread(void *, void *, void *) {
     }
 }
 
+
 K_THREAD_DEFINE(average_hr_led_thread_id, 1024, average_hr_led_thread,
                 NULL, NULL, NULL, 5, 0, 0);
 
 void error_leds_thread(void *, void *, void *) {
-    while (error_state_flag) {
-        gpio_pin_set_dt(&heartbeat_led, 1);
-        pwm_set_pulse_dt(&pwm1, pwm1.period);
-        gpio_pin_set_dt(&average_hr_led, 1);
-        gpio_pin_set_dt(&error_led, 1);
-        k_msleep(ERROR_LED_ON_TIME_MS);
-        gpio_pin_set_dt(&heartbeat_led, 0);
-        pwm_set_pulse_dt(&pwm1, 0);
-        gpio_pin_set_dt(&average_hr_led, 0);
-        gpio_pin_set_dt(&error_led, 0);
-        k_msleep(ERROR_LED_ON_TIME_MS);
+    while (1) {
+        if (error_state_flag) {
+            gpio_pin_set_dt(&heartbeat_led, 1);
+            pwm_set_dt(&pwm1, ERROR_LED_PERIOD_USEC, ERROR_LED_PERIOD_USEC);
+            gpio_pin_set_dt(&average_hr_led, 1);
+            gpio_pin_set_dt(&error_led, 1);
+            k_msleep(ERROR_LED_ON_TIME_MS);
+            gpio_pin_set_dt(&heartbeat_led, 0);
+            pwm_set_dt(&pwm1, ERROR_LED_PERIOD_USEC, 0);
+            gpio_pin_set_dt(&average_hr_led, 0);
+            gpio_pin_set_dt(&error_led, 0);
+            k_msleep(ERROR_LED_ON_TIME_MS);
+        } else {
+            k_msleep(100);
+        }
     }
 }
 
@@ -224,15 +252,15 @@ void ecg_sample_work_handler(struct k_work *work) {
 
     ecg_seq.buffer = &ecg_buffer[ecg_sample_index];
     ecg_seq.buffer_size = sizeof(int16_t);
+    ecg_seq.options = &ecg_seq_opts;  // <--- CRITICAL FIX
 
     int err = adc_read_async(adc_diff.dev, &ecg_seq, &adc_signal);
     if (err < 0) {
-        LOG_ERR("ADC async read failed at index %d (%d)", ecg_sample_index, err);
+        LOG_ERR("ADC async read failed at index %d (%d)", ecg_sample_index, err);  
         k_timer_stop(&ecg_sample_timer);
         smf_set_state(SMF_CTX(&s_obj), &states[ERROR]);
     }
 }
-
 
 
 void ecg_sample_timer_handler(struct k_timer *timer) {
@@ -291,16 +319,7 @@ float read_temperature(void) {
 }
 
 
-// State Framework
-enum states { INIT, IDLE, MEASURE, BATTERY, BLUETOOTH, ERROR };
-
-int state = INIT;
-
-static const struct smf_state states[];
-struct s_object {
-    struct smf_ctx ctx;
-} s_obj;
-
+// State Framework Functions
 
 static void init_run(void *o) {
     if (!device_is_ready(heartbeat_led.port) ||
@@ -318,6 +337,7 @@ static void init_run(void *o) {
 
     gpio_pin_configure_dt(&heartbeat_led, GPIO_OUTPUT_INACTIVE);
     gpio_pin_configure_dt(&average_hr_led, GPIO_OUTPUT_INACTIVE);
+    gpio_pin_configure_dt(&error_led, GPIO_OUTPUT_INACTIVE);
 
     gpio_pin_configure_dt(&measure_button, GPIO_INPUT);
     gpio_pin_interrupt_configure_dt(&measure_button, GPIO_INT_EDGE_TO_ACTIVE);
@@ -506,6 +526,8 @@ int main(void) {
     ret = bluetooth_init(&bluetooth_callbacks, &remote_service_callbacks);
 
     */
+
+    k_poll_signal_init(&adc_signal);
    
     smf_set_initial(SMF_CTX(&s_obj), &states[INIT]);
     // read the temperature every MEASUREMENT_DELAY_MS
