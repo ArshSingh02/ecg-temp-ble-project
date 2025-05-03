@@ -34,15 +34,23 @@ const struct device *const temp_sensor = DEVICE_DT_GET_ONE(jedec_jc_42_4_temp);
 float temperature_degC;
 volatile float measured_bpm = 0.0f;
 
-K_EVENT_DEFINE(errors);
-
-// Define button events
+// Define Device Events
 K_EVENT_DEFINE(app_events);
 // Represent Button with Mask
 #define MEASURE_DATA BIT(0)
 #define CLEAR_LED BIT(1)
 #define RESET_DEVICE BIT(2)
 #define BATTERY_TIMER_EVENT BIT(3)
+
+// Define Error Events
+K_EVENT_DEFINE(errors);
+// Represent Errors with Mask
+#define MEASURE_ERROR BIT(0)
+#define LED_BUTTON_ERROR BIT(1)
+#define ADC_ERROR BIT(2)
+#define TEMP_SENSOR_ERROR BIT(3)
+#define BLE_ERROR BIT(4)
+
 
 void battery_timer_handler(struct k_timer *timer_id) {
     k_event_post(&app_events, BATTERY_TIMER_EVENT);
