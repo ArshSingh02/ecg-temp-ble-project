@@ -198,3 +198,13 @@ void bluetooth_set_battery_level(int32_t raw_mV) {
         LOG_ERR("BAS set error (err = %d)", err);
     }
 }
+
+void bluetooth_set_heart_rate(uint8_t bpm) {
+    float heart_rate_bpm = bpm;
+    int err = bt_hrs_notify(heart_rate_bpm);
+    if (err) {
+        LOG_WRN("HRS notify failed: %d", err);
+    } else {
+        LOG_INF("Heart rate notified: %d BPM", bpm);
+    }
+}
