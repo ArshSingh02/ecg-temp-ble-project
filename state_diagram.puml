@@ -4,43 +4,39 @@ top to bottom direction
 [*] --> INIT
 
 state INIT {
-    init_run: Do initialization tasks
+    init_entry: Init GPIO, ADC, PWM\nInit Bluetooth\nInitial battery check
+    init_run: Transition to IDLE if all success\nElse transition to ERROR
 }
-
-INIT --> IDLE : Successful initialization
-INIT --> ERROR : ADC/LED init failure
+INIT --> IDLE : Init success  
+INIT --> ERROR : ADC/LED/BLE init failure
 
 state IDLE {
-    idle_entry: Start idle timer  
-    idle_entry --> idle_run
-    idle_run: Wait for events  
+    idle_entry: Start idle timer\nEnable button interrupts  
+    idle_run: Wait for events:\n- BATTERY_TIMER\n- MEASURE event  
 }
-
-IDLE --> BATTERY : Battery Timer Event (every 60 seconds)
-IDLE --> MEASURE : Measure Button Pressed
-IDLE --> ERROR : Any error detected
+IDLE --> BATTERY : Battery timer event  
+IDLE --> MEASURE : Button pressed (MEASURE event)  
+IDLE --> ERROR : Error detected  
 
 state BATTERY {
-    battery_entry: Prepare ADC  
-    battery_entry --> battery_run  
-    battery_run: Measure battery and update LED  
+    battery_entry: Setup ADC for battery\nLog battery read attempt  
+    battery_run: Measure battery voltage\nSend battery % via BLE  
 }
-BATTERY --> IDLE : Return to idle
-BATTERY --> ERROR : ADC error
+BATTERY --> IDLE : Battery read complete  
+BATTERY --> ERROR : ADC or BLE failure  
 
 state MEASURE {
-    measure_entry: Setup ECG and temp sensors  
-    measure_entry --> measure_run  
-    measure_run: Compute BPM and temperature  
+    measure_entry: Setup ECG & Temp sensors\nCheck readiness  
+    measure_run: Sample ECG (30s)\nCompute BPM\nRead temperature\nSend via BLE  
 }
-MEASURE --> IDLE : Return to idle
-MEASURE --> ERROR : ADC/temp/error event
+MEASURE --> IDLE : Measurement complete  
+MEASURE --> ERROR : ADC/Temp/BLE error  
 
 state ERROR {
-    error_entry: Disable timers & PWM, activate error flags
-    error_entry --> error_run
-    error_run: Wait for reset button
+    error_entry: Stop timers & PWM\nLog error\nRaise error flag  
+    error_run: Send error flags via BLE\nWait for reset  
 }
-ERROR --> INIT : Reset button pressed
+ERROR --> IDLE : Reset button pressed
+ERROR --> [*]
 
 @enduml
