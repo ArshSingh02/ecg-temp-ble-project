@@ -99,6 +99,7 @@ void clear_button_callback(const struct device *dev, struct gpio_callback *cb, u
 }
 static struct gpio_callback reset_button_cb;
 void reset_button_callback(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
+    LOG_INF("Reset Button Pressed");
     k_event_post(&app_events, RESET_DEVICE);
 }
 
@@ -393,12 +394,28 @@ static void measure_run(void *o) {
 }
 
 static void error_entry(void *o) {
+    LOG_ERR("Entering ERROR state");
 
+    k_timer_stop(&battery_timer);
+    k_timer_stop(&ecg_sample_timer);
+    pwm_set_pulse_dt(&pwm1, 0);
+
+    error_state_flag = true;
+    k_event_clear(&app_events, MEASURE_DATA | BATTERY_TIMER_EVENT);
 }
 
 
 static void error_run(void *o) {
+    LOG_INF("In ERROR state... waiting for reset");
 
+    uint32_t events = k_event_wait(&app_events, RESET_DEVICE, true, K_FOREVER);
+
+    if (events & RESET_DEVICE) {
+        LOG_INF("Reset event received. Clearing error and reinitializing.");
+        error_state_flag = false;
+        k_event_clear(&errors, MEASURE_ERROR | ADC_ERROR | TEMP_SENSOR_ERROR | BLE_ERROR);
+        smf_set_state(SMF_CTX(&s_obj), &states[INIT]);
+    }
 }
 
 
