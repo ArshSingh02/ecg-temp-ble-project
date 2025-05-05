@@ -30,7 +30,7 @@ static volatile int ecg_sample_index = 0;
 volatile bool led2_enabled = true;
 volatile bool error_state_flag = false;
 
-float battery_pct = 0.0f;
+float battery_pct = 0.0f;  // should be int; don't need float precision
 
 static struct k_poll_signal adc_signal;
 
@@ -61,7 +61,7 @@ static struct adc_sequence_options ecg_seq_opts = {
 const struct device *const temp_sensor = DEVICE_DT_GET_ONE(jedec_jc_42_4_temp);
 
 float temperature_degC;
-volatile float measured_bpm = 0.0f;
+volatile float measured_bpm = 0.0f;  // would use int; shouldn't have to be volatile
 
 // Define Device Events
 K_EVENT_DEFINE(app_events);
@@ -126,7 +126,7 @@ void clear_button_callback(const struct device *dev, struct gpio_callback *cb, u
 
     if (led2_enabled) {
         LOG_INF("Clearing LED2");
-        led2_enabled = false;
+        led2_enabled = false;  // can directly get GPIO output status instead of needing to manually track
         k_event_post(&app_events, CLEAR_LED);
     } else {
         LOG_WRN("LED2 is already off. No heart rate measurement taken yet.");
@@ -154,11 +154,11 @@ void heartbeat_thread(void *, void *, void *) {
     while (1) {
         if (!error_state_flag) {
             gpio_pin_set_dt(&heartbeat_led, 1);
-            k_msleep(500);
+            k_msleep(500);  // macro
             gpio_pin_set_dt(&heartbeat_led, 0);
-            k_msleep(500);
+            k_msleep(500); // macro
         } else {
-            k_msleep(100);
+            k_msleep(100);  // ??
         }
     }
 }
@@ -166,19 +166,20 @@ K_THREAD_DEFINE(heartbeat_thread_id, 1024, heartbeat_thread, NULL, NULL, NULL, 5
 
 void average_hr_led_thread(void *, void *, void *) {
     while (1) {
+        // this logical workflow, especially w/ the continue statements, is difficult to follow and ripe for bugs
         if (error_state_flag) {
-            k_msleep(100);
+            k_msleep(100);  // ??
             continue;
         }
 
         if (!led2_enabled) {
             gpio_pin_set_dt(&average_hr_led, 0);
-            k_msleep(200);
+            k_msleep(200); // ??
             continue;
         }
 
         float bpm = measured_bpm;
-        if (bpm >= 40.0f && bpm <= 200.0f) {
+        if (bpm >= 40.0f && bpm <= 200.0f) {  // all specs should be macros
             float hz = bpm / 60.0f;
             int period_ms = (int)(1000.0f / hz);
             int on_time = period_ms / 4;
@@ -203,7 +204,7 @@ void error_leds_thread(void *, void *, void *) {
     while (1) {
         if (error_state_flag) {
             gpio_pin_set_dt(&heartbeat_led, 1);
-            pwm_set_dt(&pwm1, ERROR_LED_PERIOD_USEC, ERROR_LED_PERIOD_USEC);
+            pwm_set_dt(&pwm1, ERROR_LED_PERIOD_USEC, ERROR_LED_PERIOD_USEC);  // use DT-defined period
             gpio_pin_set_dt(&average_hr_led, 1);
             gpio_pin_set_dt(&error_led, 1);
             k_msleep(ERROR_LED_ON_TIME_MS);
@@ -213,7 +214,7 @@ void error_leds_thread(void *, void *, void *) {
             gpio_pin_set_dt(&error_led, 0);
             k_msleep(ERROR_LED_ON_TIME_MS);
         } else {
-            k_msleep(100);
+            k_msleep(100);  // ??
         }
     }
 }
@@ -226,8 +227,8 @@ float check_battery_and_update_pwm(void) {
     struct adc_sequence seq = {
         .buffer = &adc_buf,
         .buffer_size = sizeof(adc_buf),
-        .resolution = 12,
-        .channels = BIT(adc_vadc.channel_id),
+        .resolution = 12, // set in DT
+        .channels = BIT(adc_vadc.channel_id),  // set in DT
     };
     adc_sequence_init_dt(&adc_vadc, &seq);
 
@@ -280,10 +281,10 @@ void ecg_sample_work_handler(struct k_work *work) {
 
 
 void ecg_sample_timer_handler(struct k_timer *timer) {
-    k_work_submit(&ecg_sample_work);
+    k_work_submit(&ecg_sample_work);  // using a work queue doesn't help with timing accuracy
 }
 
-float measure_average_heart_rate(void) {
+float measure_average_heart_rate(void) {  // you should be returning an int exit code, not a potential value or an exit code-like float
     if (!device_is_ready(adc_diff.dev)) {
         LOG_ERR("Differential ADC not ready");
         return -1.0f;
@@ -299,8 +300,8 @@ float measure_average_heart_rate(void) {
     ecg_seq = (struct adc_sequence){
         .buffer = &ecg_buffer[0],
         .buffer_size = sizeof(int16_t),
-        .resolution = 12,
-        .oversampling = 4,
+        .resolution = 12,  // set in DT
+        .oversampling = 4,  // this is not valid; it applies to ALL channels, including your battery channel
         .channels = BIT(adc_diff.channel_id),
     };
     adc_sequence_init_dt(&adc_diff, &ecg_seq);
@@ -313,7 +314,7 @@ float measure_average_heart_rate(void) {
             LOG_ERR("ERROR: Measurement button pressed again during ECG sampling.");
             k_event_post(&errors, MEASURE_ERROR);
             k_timer_stop(&ecg_sample_timer);
-            return -1.0f;
+            return -1.0f;  
         }
         k_sleep(K_MSEC(1));
     }
@@ -325,7 +326,7 @@ float measure_average_heart_rate(void) {
 
 float read_temperature(void) {
 
-    float temp;
+    float temp;  // unused
     int ret = read_temperature_sensor(temp_sensor, &temperature_degC);
         if (ret != 0) {
             LOG_ERR("There was a problem reading the temperature sensor (%d)", ret);
@@ -573,5 +574,7 @@ int main(void) {
         k_msleep(100);
     }
 
-    return 0;
+    // no termination state
+
+    return 0;  // this should not be zero, as you don't have a "good" reason to exit
 }
